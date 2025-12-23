@@ -1,7 +1,8 @@
 {
-  "name": "iCore Desktop",
-  "description": "A standalone-feel high-performance controller mapping engine.",
+  "name": "iCore DualMap Desktop",
+  "description": "Standalone performance mapping engine for Sony DualSense controllers.",
   "requestFramePermissions": [],
   "usb": true,
-  "hid": true
+  "hid": true,
+  "shortcuts": true
 }
