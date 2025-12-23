@@ -1,0 +1,7 @@
+{
+  "name": "iCore Desktop",
+  "description": "A standalone-feel high-performance controller mapping engine.",
+  "requestFramePermissions": [],
+  "usb": true,
+  "hid": true
+}
