@@ -20,7 +20,7 @@ const NAME_TO_INDEX: Record<string, number> = Object.entries(DUALSENSE_INDICES).
   return acc;
 }, {} as Record<string, number>);
 
-export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfile?: Profile }> = ({ children, activeProfile }) => {
+export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfile: Profile }> = ({ children, activeProfile }) => {
   const [state, setState] = useState<GamepadState>({
     connected: false,
     id: null,
@@ -45,6 +45,15 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   const stickyTimersRef = useRef<Record<string, any>>({});
   const turboIntervalsRef = useRef<Record<string, { interval: any, rate: number }>>({});
 
+  // Active refs to ensure polling loop has latest config without re-running effects
+  const profileRef = useRef(activeProfile);
+  const stickyStatesRef = useRef<Record<string, boolean>>({});
+  const toggleStatesRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    profileRef.current = activeProfile;
+  }, [activeProfile]);
+
   const resetStats = () => {
     setState(prev => ({
       ...prev,
@@ -55,7 +64,8 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   };
 
   const triggerHaptic = (gamepad: Gamepad, intensity: number = 0.5, duration: number = 100) => {
-    if (activeProfile?.accessibility.hapticFeedbackEnabled && gamepad.vibrationActuator) {
+    const profile = profileRef.current;
+    if (profile?.accessibility.hapticFeedbackEnabled && gamepad.vibrationActuator) {
       (gamepad.vibrationActuator as any).playEffect('dual-rumble', {
         startDelay: 0,
         duration: duration,
@@ -76,19 +86,22 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   const resetStickyStates = () => {
     Object.values(stickyTimersRef.current).forEach(clearTimeout);
     stickyTimersRef.current = {};
+    stickyStatesRef.current = {};
+    toggleStatesRef.current = {};
     setState(prev => ({ ...prev, stickyStates: {}, toggleStates: {} }));
   };
 
   const updateGamepadState = () => {
     const gamepads = navigator.getGamepads();
     const gp = gamepads[0];
+    const profile = profileRef.current;
 
     if (gp) {
       const rawButtons: Record<number, boolean> = {};
       gp.buttons.forEach((btn, idx) => { rawButtons[idx] = btn.pressed; });
 
-      const acc = activeProfile?.accessibility;
-      const oneHandedMode = activeProfile?.oneHandedMode || 'NONE';
+      const acc = profile?.accessibility;
+      const oneHandedMode = profile?.oneHandedMode || 'NONE';
       const shiftBtnName = acc?.oneHandedShiftButton || 'L3';
       const shiftIdx = NAME_TO_INDEX[shiftBtnName];
       const isShifted = oneHandedMode !== 'NONE' && !!rawButtons[shiftIdx];
@@ -96,6 +109,7 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       const translatedButtons: Record<number, boolean> = { ...rawButtons };
       let translatedAxes = [...gp.axes];
 
+      // Handle One-Handed Mapping Logic
       if (oneHandedMode === 'LEFT' && isShifted) {
         translatedButtons[3] = rawButtons[12];
         translatedButtons[0] = rawButtons[13];
@@ -125,47 +139,62 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       const newHeatmap = { ...state.heatmap };
       let newInputs = state.totalInputs;
       let activityDetected = false;
-      const newStickyStates = { ...state.stickyStates };
-      const newToggleStates = { ...state.toggleStates };
+      
+      const nextStickyStates = { ...stickyStatesRef.current };
+      const nextToggleStates = { ...toggleStatesRef.current };
 
       Object.keys(translatedButtons).forEach((key) => {
         const idx = parseInt(key);
-        const pressed = translatedButtons[idx];
-        if (pressed) activityDetected = true;
+        const physicalPressed = translatedButtons[idx];
+        if (physicalPressed) activityDetected = true;
         
         const btnName = DUALSENSE_INDICES[idx];
-        const mapping = activeProfile?.mappings.find(m => m.button === btnName);
+        const mapping = profile?.mappings.find(m => m.button === btnName);
 
-        if (pressed && !lastButtonsRef.current[idx]) {
+        // Edge Detection: Physical Button just went DOWN
+        if (physicalPressed && !lastButtonsRef.current[idx]) {
           if (btnName) {
             newHeatmap[btnName] = (newHeatmap[btnName] || 0) + 1;
             newInputs++;
             triggerHaptic(gp, 0.4, 50);
           }
 
+          // Toggle Sticky State if configured
           if (mapping?.isSticky) {
-            const currentlyStuck = !!newStickyStates[btnName];
-            newStickyStates[btnName] = !currentlyStuck;
-            if (!currentlyStuck && acc && acc.stickyDurationLimit > 0) {
-              if (stickyTimersRef.current[btnName]) clearTimeout(stickyTimersRef.current[btnName]);
-              stickyTimersRef.current[btnName] = setTimeout(() => {
-                setState(prev => {
-                  const nextSticky = { ...prev.stickyStates };
-                  nextSticky[btnName] = false;
-                  return { ...prev, stickyStates: nextSticky };
-                });
+            const currentlyStuck = !!nextStickyStates[btnName];
+            nextStickyStates[btnName] = !currentlyStuck;
+
+            // Handle Sticky Release Timer
+            if (nextStickyStates[btnName]) {
+              if (acc && acc.stickyDurationLimit > 0) {
+                if (stickyTimersRef.current[btnName]) clearTimeout(stickyTimersRef.current[btnName]);
+                stickyTimersRef.current[btnName] = setTimeout(() => {
+                  stickyStatesRef.current[btnName] = false;
+                  setState(prev => ({ 
+                    ...prev, 
+                    stickyStates: { ...prev.stickyStates, [btnName]: false } 
+                  }));
+                  delete stickyTimersRef.current[btnName];
+                }, acc.stickyDurationLimit * 1000);
+              }
+            } else {
+              if (stickyTimersRef.current[btnName]) {
+                clearTimeout(stickyTimersRef.current[btnName]);
                 delete stickyTimersRef.current[btnName];
-              }, acc.stickyDurationLimit * 1000);
+              }
             }
           }
 
           if (mapping?.isToggle) {
-            newToggleStates[btnName] = !newToggleStates[btnName];
+            nextToggleStates[btnName] = !nextToggleStates[btnName];
           }
         }
 
-        const isCurrentlyActive = pressed || newStickyStates[btnName] || newToggleStates[btnName];
-        if (mapping?.isTurbo && isCurrentlyActive) {
+        // Logical State: Is the virtual output "ON"?
+        const isLogicalActive = physicalPressed || nextStickyStates[btnName] || nextToggleStates[btnName];
+
+        // Turbo Logic
+        if (mapping?.isTurbo && isLogicalActive) {
           const currentRate = mapping.turboSpeed || acc?.globalTurboRate || 10;
           if (!turboIntervalsRef.current[btnName] || turboIntervalsRef.current[btnName].rate !== currentRate) {
             if (turboIntervalsRef.current[btnName]) clearInterval(turboIntervalsRef.current[btnName].interval);
@@ -190,22 +219,26 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         }
       });
 
+      // Quick Release Combo (Share + Options)
       if (acc?.quickReleaseCombo && gp.buttons[8].pressed && gp.buttons[9].pressed) {
         resetStickyStates();
         triggerHaptic(gp, 0.8, 200);
+        return; // Early exit to ensure state clears effectively
       }
 
+      stickyStatesRef.current = nextStickyStates;
+      toggleStatesRef.current = nextToggleStates;
+
+      // Analog smoothing logic
       let currentAxes = [...translatedAxes];
-      if (acc) {
-        if (acc.aimStabilizationStrength) {
-          axesBuffer.current.push([...translatedAxes]);
-          const windowSize = Math.max(2, Math.floor(acc.aimStabilizationStrength / 10));
-          if (axesBuffer.current.length > windowSize) axesBuffer.current.shift();
-          [0, 1, 2, 3].forEach(i => {
-            const sum = axesBuffer.current.reduce((sumAcc, curr) => sumAcc + (curr[i] || 0), 0);
-            currentAxes[i] = sum / (axesBuffer.current.length || 1);
-          });
-        }
+      if (acc && acc.aimStabilizationStrength) {
+        axesBuffer.current.push([...translatedAxes]);
+        const windowSize = Math.max(2, Math.floor(acc.aimStabilizationStrength / 10));
+        if (axesBuffer.current.length > windowSize) axesBuffer.current.shift();
+        [0, 1, 2, 3].forEach(i => {
+          const sum = axesBuffer.current.reduce((sumAcc, curr) => sumAcc + (curr[i] || 0), 0);
+          currentAxes[i] = sum / (axesBuffer.current.length || 1);
+        });
       }
 
       translatedAxes.forEach(axis => { if (Math.abs(axis) > 0.1) activityDetected = true; });
@@ -226,8 +259,8 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         totalInputs: newInputs,
         lastInputTime: lastInput,
         isThrottled,
-        stickyStates: newStickyStates,
-        toggleStates: newToggleStates,
+        stickyStates: nextStickyStates,
+        toggleStates: nextToggleStates,
         oneHandedShiftActive: isShifted,
         motion: gp.axes.length >= 6 ? {
            gyro: { x: gp.axes[4] || 0, y: gp.axes[5] || 0, z: gp.axes[6] || 0 },
@@ -248,7 +281,7 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       Object.values(stickyTimersRef.current).forEach(clearTimeout);
       Object.values(turboIntervalsRef.current).forEach((t: any) => clearInterval(t.interval));
     };
-  }, [activeProfile]);
+  }, []);
 
   return (
     <GamepadContext.Provider value={{ state, resetStats, setLayer, toggleGyro, resetStickyStates }}>

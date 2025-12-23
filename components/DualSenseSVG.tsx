@@ -54,21 +54,26 @@ const DualSenseSVG: React.FC<DualSenseSVGProps> = ({
         className="cursor-pointer group" 
         onClick={() => onSelectButton?.(btnName)}
       >
-        {/* Glow Layer for Sticky/Active */}
+        {/* Glow Layer for Sticky */}
         {sticky && (
           <circle 
-            cx={cx} cy={cy} r={r + 4} 
-            className="fill-yellow-500/20 animate-pulse pointer-events-none" 
+            cx={cx} cy={cy} r={r + 8} 
+            className="fill-yellow-500/10 animate-pulse pointer-events-none" 
           />
+        )}
+        
+        {/* Pulsing Outer Ring for Active */}
+        {active && (
+          <circle cx={cx} cy={cy} r={r + 4} className={`fill-${firing ? 'yellow' : sticky ? 'amber' : 'blue'}-500/10 animate-ping pointer-events-none`} />
         )}
 
         <circle 
           cx={cx} cy={cy} r={r} 
           className={`
             transition-all duration-75 group-hover:fill-slate-600
-            ${heatmapColor || (firing ? 'fill-yellow-400' : active ? 'fill-blue-500' : 'fill-slate-700')} 
+            ${heatmapColor || (firing ? 'fill-yellow-400' : sticky ? 'fill-amber-600' : active ? 'fill-blue-500' : 'fill-slate-700')} 
             ${isSelected ? 'stroke-blue-400 stroke-[3px]' : ''}
-            ${sticky ? 'stroke-yellow-500 stroke-[4px] drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]' : ''}
+            ${sticky ? 'stroke-yellow-400 stroke-[4px] drop-shadow-[0_0_12px_rgba(234,179,8,0.8)]' : ''}
             ${toggled && !sticky ? 'stroke-cyan-400 stroke-[3px] drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : ''}
             ${!isSelected && !sticky && !toggled ? 'stroke-slate-500 stroke-1' : ''}
             ${firing ? 'animate-pulse' : ''}
@@ -84,20 +89,16 @@ const DualSenseSVG: React.FC<DualSenseSVGProps> = ({
 
         {/* Status Icons */}
         {sticky && (
-          <foreignObject x={cx - 6} y={cy - 20} width="12" height="12">
-            <div className="flex items-center justify-center bg-yellow-500 rounded-full p-0.5 shadow-lg">
-              <Lock className="w-2 h-2 text-slate-900" strokeWidth={3} />
+          <foreignObject x={cx - 7} y={cy - 24} width="14" height="14" className="overflow-visible">
+            <div className="flex items-center justify-center bg-yellow-500 rounded-full p-0.5 shadow-lg border border-slate-900 animate-in zoom-in duration-200">
+              <Lock className="w-2.5 h-2.5 text-slate-900" strokeWidth={3} />
             </div>
           </foreignObject>
         )}
         {firing && (
-          <foreignObject x={cx + 8} y={cy - 8} width="12" height="12">
-            <Zap className="w-3 h-3 text-yellow-400 animate-bounce" fill="currentColor" />
+          <foreignObject x={cx + 10} y={cy - 10} width="14" height="14" className="overflow-visible">
+            <Zap className="w-4 h-4 text-yellow-400 animate-bounce fill-yellow-400" />
           </foreignObject>
-        )}
-        
-        {(isPressed(idx) || firing) && (
-          <circle cx={cx} cy={cy} r={r + 6} className={`fill-${firing ? 'yellow' : 'blue'}-500/10 animate-ping pointer-events-none`} />
         )}
       </g>
     );
@@ -113,22 +114,27 @@ const DualSenseSVG: React.FC<DualSenseSVGProps> = ({
     const active = isPressed(idx) || sticky || toggled;
 
     return (
-      <g className="cursor-pointer" onClick={() => onSelectButton?.(btnName)}>
+      <g className="cursor-pointer group" onClick={() => onSelectButton?.(btnName)}>
+        {sticky && (
+          <rect x={x-2} y={y-2} width={22} height={22} rx={6} className="fill-yellow-500/10 animate-pulse pointer-events-none" />
+        )}
         <rect 
           x={x} y={y} width={18} height={18} rx={4}
           className={`
             transition-colors hover:fill-slate-600
-            ${heatmapColor || (firing ? 'fill-yellow-400' : active ? 'fill-blue-500' : 'fill-slate-700')} 
+            ${heatmapColor || (firing ? 'fill-yellow-400' : sticky ? 'fill-amber-600' : active ? 'fill-blue-500' : 'fill-slate-700')} 
             ${isSelected ? 'stroke-blue-400 stroke-[2px]' : ''}
-            ${sticky ? 'stroke-yellow-500 stroke-[3px] drop-shadow-[0_0_8px_rgba(234,179,8,0.6)]' : ''}
+            ${sticky ? 'stroke-yellow-400 stroke-[3px] drop-shadow-[0_0_10px_rgba(234,179,8,0.7)]' : ''}
             ${toggled && !sticky ? 'stroke-cyan-400 stroke-[2px]' : ''}
             ${!isSelected && !sticky && !toggled ? 'stroke-slate-500 stroke-1' : ''}
             ${firing ? 'animate-pulse' : ''}
           `}
         />
         {sticky && (
-          <foreignObject x={x + 4} y={y + 4} width="10" height="10">
-            <Lock className="w-2.5 h-2.5 text-white opacity-50" />
+          <foreignObject x={x + 3} y={y - 10} width="12" height="12">
+            <div className="bg-yellow-500 rounded-full p-0.5">
+               <Lock className="w-2.5 h-2.5 text-slate-900" strokeWidth={3} />
+            </div>
           </foreignObject>
         )}
       </g>
@@ -190,16 +196,16 @@ const DualSenseSVG: React.FC<DualSenseSVGProps> = ({
           {/* Analog Sticks */}
           <g transform={`translate(${150 + (state.axes[0] || 0) * 12}, ${220 + (state.axes[1] || 0) * 12})`} className="cursor-pointer" onClick={() => onSelectButton?.('L3')}>
             <circle cx="0" cy="0" r="28" className="fill-slate-900 stroke-slate-700 stroke-2" />
-            <circle cx="0" cy="0" r="20" className={`transition-colors ${isPressed(10) ? 'fill-blue-500' : 'fill-slate-700'} ${selectedButton === 'L3' ? 'stroke-blue-400 stroke-2' : ''}`} />
+            <circle cx="0" cy="0" r="20" className={`transition-colors ${isPressed(10) || isStickyActive(10) ? 'fill-blue-500' : 'fill-slate-700'} ${selectedButton === 'L3' ? 'stroke-blue-400 stroke-2' : ''} ${isStickyActive(10) ? 'stroke-yellow-400 stroke-2' : ''}`} />
           </g>
           <g transform={`translate(${250 + (state.axes[2] || 0) * 12}, ${220 + (state.axes[3] || 0) * 12})`} className="cursor-pointer" onClick={() => onSelectButton?.('R3')}>
             <circle cx="0" cy="0" r="28" className="fill-slate-900 stroke-slate-700 stroke-2" />
-            <circle cx="0" cy="0" r="20" className={`transition-colors ${isPressed(11) ? 'fill-blue-500' : 'fill-slate-700'} ${selectedButton === 'R3' ? 'stroke-blue-400 stroke-2' : ''}`} />
+            <circle cx="0" cy="0" r="20" className={`transition-colors ${isPressed(11) || isStickyActive(11) ? 'fill-blue-500' : 'fill-slate-700'} ${selectedButton === 'R3' ? 'stroke-blue-400 stroke-2' : ''} ${isStickyActive(11) ? 'stroke-yellow-400 stroke-2' : ''}`} />
           </g>
 
           {/* Shoulder Buttons */}
-          <path d="M70,40 L120,40 L120,30 L70,30 Z" rx="4" onClick={() => onSelectButton?.('L1')} className={`cursor-pointer transition-all ${isPressed(4) || isStickyActive(4) || isToggleActive(4) ? 'fill-blue-500 shadow-lg' : 'fill-slate-700'} stroke-slate-600`} />
-          <path d="M280,40 L330,40 L330,30 L280,30 Z" rx="4" onClick={() => onSelectButton?.('R1')} className={`cursor-pointer transition-all ${isPressed(5) || isStickyActive(5) || isToggleActive(5) ? 'fill-blue-500 shadow-lg' : 'fill-slate-700'} stroke-slate-600`} />
+          <path d="M70,40 L120,40 L120,30 L70,30 Z" rx="4" onClick={() => onSelectButton?.('L1')} className={`cursor-pointer transition-all ${isPressed(4) || isStickyActive(4) || isToggleActive(4) ? 'fill-blue-500 shadow-lg' : 'fill-slate-700'} stroke-slate-600 ${isStickyActive(4) ? 'stroke-yellow-400 stroke-2' : ''}`} />
+          <path d="M280,40 L330,40 L330,30 L280,30 Z" rx="4" onClick={() => onSelectButton?.('R1')} className={`cursor-pointer transition-all ${isPressed(5) || isStickyActive(5) || isToggleActive(5) ? 'fill-blue-500 shadow-lg' : 'fill-slate-700'} stroke-slate-600 ${isStickyActive(5) ? 'stroke-yellow-400 stroke-2' : ''}`} />
           
           {/* Functional Buttons */}
           {renderButton(8, 115, 85, 8, '')}

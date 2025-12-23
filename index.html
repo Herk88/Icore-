@@ -1,32 +1,68 @@
-
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>iCore DualSense Mapper</title>
-    <link rel="stylesheet" href="./index.css" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iCore DualSense Mapper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          animation: {
+            'spin-slow': 'spin 10s linear infinite',
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer base {
+      body {
+        @apply font-sans antialiased bg-[#050505] text-slate-200 overflow-x-hidden selection:bg-blue-500/30;
+      }
+    }
+    @layer components {
+      .glass {
+        @apply bg-slate-900/40 backdrop-blur-2xl border border-white/5;
+      }
+    }
+    @layer utilities {
+      .drag-region { -webkit-app-region: drag; }
+      .no-drag { -webkit-app-region: no-drag; }
+      .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.05) transparent; }
+      
+      ::-webkit-scrollbar { width: 5px; height: 5px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.3); }
+    }
+  </style>
   <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "process": "https://esm.sh/process@^0.11.10",
-    "vitest": "https://esm.sh/vitest@^4.0.16",
-    "url": "https://esm.sh/url@^0.11.4",
-    "path": "https://esm.sh/path@^0.12.7",
-    "electron": "https://esm.sh/electron@^39.2.7",
-    "@testing-library/react": "https://esm.sh/@testing-library/react@^16.3.1"
+  {
+    "imports": {
+      "react": "https://esm.sh/react@^19.2.3",
+      "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+      "react/": "https://esm.sh/react@^19.2.3/",
+      "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+      "electron": "https://esm.sh/electron@^39.2.7",
+      "path": "https://esm.sh/path@^0.12.7",
+      "url": "https://esm.sh/url@^0.11.4",
+      "process": "https://esm.sh/process@^0.11.10",
+      "vite": "https://esm.sh/vite@^7.3.0",
+      "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+      "vitest": "https://esm.sh/vitest@^4.0.16",
+      "@testing-library/react": "https://esm.sh/@testing-library/react@^16.3.1"
+    }
   }
-}
-</script>
+  </script>
 </head>
-  <body class="bg-[#050505] text-slate-200">
-    <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
-  </body>
+<body class="bg-[#050505] text-slate-200">
+  <div id="root"></div>
+  <script type="module" src="./index.tsx"></script>
+</body>
 </html>

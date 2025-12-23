@@ -88,13 +88,7 @@ const VirtualOutput: React.FC<VirtualOutputProps> = ({ profile }) => {
               log.includes('SYSTEM') ? 'border-slate-500/30 text-slate-400' :
               'border-blue-500/30 text-slate-200'}`}>
               <span className="text-slate-700 mr-2 text-[8px]">
-                {/* Fixed: Cast to any because fractionalSecondDigits is valid in browsers but missing in some TS versions */}
-                {new Date().toLocaleTimeString([], { 
-                  hour12: false, 
-                  minute: '2-digit', 
-                  second: '2-digit', 
-                  ...({ fractionalSecondDigits: 3 } as any) 
-                })}
+                {new Date().toISOString().split('T')[1].replace('Z', '')}
               </span>
               {log}
             </div>

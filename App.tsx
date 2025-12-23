@@ -6,13 +6,13 @@ import MappingList from './components/MappingList';
 import VirtualOutput from './components/VirtualOutput';
 import AnalyticsView from './components/AnalyticsView';
 import HelpView from './components/HelpView';
-import { DEFAULT_PROFILES, DUALSENSE_INDICES } from './constants';
+import { DEFAULT_PROFILES } from './constants';
 import { Profile, ControllerButton, Mapping, AccessibilitySettings } from './types';
 import { 
   Settings, Layers, Gamepad2, Activity, Cpu, ShieldCheck, Zap, 
-  ChevronDown, Flame, Monitor, Layout, Target, Move, Info,
-  Lock, MousePointer2, X, Minus, Square, Bell, Terminal as TerminalIcon, 
-  ShieldAlert, Wifi, Database, HardDrive, Unplug, Upload, RefreshCw, Eye
+  Monitor, Target, Info, Lock, MousePointer2, X, Minus, Square, 
+  Bell, Terminal as TerminalIcon, ShieldAlert, Wifi, Database, 
+  HardDrive, Upload, RefreshCw, Eye, Filter, ChevronDown, Check
 } from 'lucide-react';
 
 const TitleBar: React.FC = () => {
@@ -126,74 +126,43 @@ const KernelMonitor: React.FC = () => {
   );
 };
 
-const AppContent: React.FC = () => {
+const AppShell: React.FC<{ 
+  profiles: Profile[], 
+  activeProfile: Profile,
+  setActiveProfileId: (id: string) => void,
+  updateActiveProfile: (updates: Partial<Profile>) => void,
+  updateMapping: (btn: ControllerButton, updates: Partial<Mapping>) => void
+}> = ({ profiles, activeProfile, setActiveProfileId, updateActiveProfile, updateMapping }) => {
   const { state, setLayer, toggleGyro, resetStickyStates } = useGamepad();
   const bridge = (window as any).icoreBridge;
   
-  const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const saved = localStorage.getItem('icore_profiles_v2');
-    return saved ? JSON.parse(saved) : DEFAULT_PROFILES;
-  });
-
-  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
-    return localStorage.getItem('icore_active_profile_id_v2') || profiles[0].id;
-  });
-
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'warn' | 'success' } | null>(null);
   const [selectedTab, setSelectedTab] = useState<'controller' | 'profiles' | 'analytics' | 'kernel' | 'settings' | 'help'>('controller');
   const [selectedButton, setSelectedButton] = useState<ControllerButton | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<'All' | 'Default' | 'Accessibility' | 'Game-Specific' | 'User'>('All');
 
-  const activeProfile = useMemo(() => 
-    profiles.find(p => p.id === activeProfileId) || profiles[0], 
-  [profiles, activeProfileId]);
-
-  useEffect(() => {
-    localStorage.setItem('icore_profiles_v2', JSON.stringify(profiles));
-    localStorage.setItem('icore_active_profile_id_v2', activeProfileId);
-  }, [profiles, activeProfileId]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setNotification({ message: "HID Service Link Established.", type: 'success' });
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const updateActiveProfile = (updates: Partial<Profile>) => {
-    const updated = profiles.map(p => p.id === activeProfileId ? { ...p, ...updates } : p);
-    setProfiles(updated);
-    
-    const profile = updated.find(p => p.id === activeProfileId);
-    if (profile && bridge?.saveProfile) {
-      bridge.saveProfile(profile);
-    }
-    
-    setNotification({ message: `Updated mapping stack: ${activeProfile.name}`, type: 'info' });
-  };
+  const filteredProfiles = useMemo(() => {
+    if (activeCategory === 'All') return profiles;
+    return profiles.filter(p => p.category === activeCategory);
+  }, [profiles, activeCategory]);
 
   const updateAccessibility = (updates: Partial<AccessibilitySettings>) => {
     updateActiveProfile({ accessibility: { ...activeProfile.accessibility, ...updates } });
   };
 
-  const updateMapping = (btn: ControllerButton, updates: Partial<Mapping>) => {
-    setProfiles(prev => prev.map(p => {
-      if (p.id !== activeProfileId) return p;
-      const existing = p.mappings.find(m => m.button === btn);
-      const newMappings = existing 
-        ? p.mappings.map(m => m.button === btn ? { ...m, ...updates } : m)
-        : [...p.mappings, { button: btn, mappedTo: 'Unbound', type: 'KEYBOARD', ...updates } as Mapping];
-      return { ...p, mappings: newMappings };
-    }));
-  };
-
   const currentMapping = activeProfile.mappings.find(m => m.button === selectedButton);
+
+  const handleDeploy = () => {
+    setNotification({ message: "Syncing iCore Kernel with active stack...", type: 'info' });
+    setTimeout(() => {
+      setNotification({ message: `Successfully deployed profile: ${activeProfile.name}`, type: 'success' });
+    }, 800);
+  };
 
   return (
     <div className={`h-screen flex flex-col bg-[#050505] text-slate-200 selection:bg-blue-500/30 overflow-hidden font-sans`}>
-      
       <TitleBar />
-      
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-20 lg:w-64 bg-slate-950 border-r border-white/5 flex flex-col items-center py-8 px-4 gap-8 z-30 shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex items-center gap-3 lg:self-start lg:pl-4 group cursor-pointer" onClick={() => setSelectedTab('controller')}>
@@ -261,7 +230,10 @@ const AppContent: React.FC = () => {
                     <button className="px-6 py-3.5 bg-slate-900/50 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-3">
                        <Upload className="w-4 h-4" /> Import Backup
                     </button>
-                    <button className="px-8 py-3.5 bg-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 hover:scale-105 active:scale-95 transition-all text-white font-bold">
+                    <button 
+                      onClick={handleDeploy}
+                      className="px-8 py-3.5 bg-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 hover:scale-105 active:scale-95 transition-all text-white font-bold"
+                    >
                        Deploy to HID
                     </button>
                   </div>
@@ -287,12 +259,14 @@ const AppContent: React.FC = () => {
                                   updateMapping(selectedButton, { isTurbo: !currentMapping?.isTurbo });
                                   if (bridge?.engageTurbo) bridge.engageTurbo(selectedButton!, activeProfile.accessibility.globalTurboRate);
                                 }}
+                                title="Toggle Turbo"
                                 className={`p-4 rounded-2xl border transition-all ${currentMapping?.isTurbo ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.2)]' : 'bg-slate-800/50 border-white/5 text-slate-500'}`}
                                >
                                  <Zap className="w-6 h-6" />
                                </button>
                                <button 
                                 onClick={() => updateMapping(selectedButton, { isSticky: !currentMapping?.isSticky })}
+                                title="Toggle Sticky"
                                 className={`p-4 rounded-2xl border transition-all ${currentMapping?.isSticky ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]' : 'bg-slate-800/50 border-white/5 text-slate-500'}`}
                                >
                                  <Lock className="w-6 h-6" />
@@ -329,6 +303,61 @@ const AppContent: React.FC = () => {
               </>
             )}
 
+            {selectedTab === 'profiles' && (
+              <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-500">
+                <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="space-y-1">
+                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Stack Repository</h2>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Configure hardware mapping libraries</p>
+                  </div>
+                  <div className="flex items-center gap-2 p-1.5 bg-slate-950/50 rounded-2xl border border-white/5">
+                    {(['All', 'Default', 'Accessibility', 'Game-Specific', 'User'] as const).map(cat => (
+                      <button 
+                        key={cat}
+                        onClick={() => setActiveCategory(cat)}
+                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeCategory === cat ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-white'}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </header>
+
+                {filteredProfiles.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredProfiles.map(p => (
+                      <button 
+                        key={p.id}
+                        onClick={() => setActiveProfileId(p.id)}
+                        className={`text-left p-8 rounded-[2.5rem] border transition-all group relative overflow-hidden ${activeProfile.id === p.id ? 'bg-blue-600/10 border-blue-500/50 shadow-2xl' : 'bg-slate-900/40 border-white/5 hover:border-white/10'}`}
+                      >
+                        {activeProfile.id === p.id && (
+                          <div className="absolute top-0 right-0 p-4 animate-in zoom-in duration-300">
+                             <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center border-2 border-[#050505]">
+                               <Check className="w-3.5 h-3.5 text-white" />
+                             </div>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-start mb-6">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${activeProfile.id === p.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500 group-hover:bg-slate-700 transition-colors'}`}>
+                            <Layers className="w-6 h-6" />
+                          </div>
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-white/5 ${activeProfile.id === p.id ? 'text-blue-400' : 'text-slate-600'}`}>{p.category}</span>
+                        </div>
+                        <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-2 group-hover:text-blue-400 transition-colors">{p.name}</h3>
+                        <p className="text-xs text-slate-500 font-bold uppercase leading-tight">{p.description || "Custom mapping stack descriptor"}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-32 text-center glass rounded-[3rem] border-dashed border-white/10">
+                     <Filter className="w-12 h-12 text-slate-800 mx-auto mb-4" />
+                     <p className="text-xs font-black text-slate-700 uppercase tracking-widest">No profiles found in {activeCategory} category</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {selectedTab === 'kernel' && <KernelMonitor />}
             {selectedTab === 'analytics' && <AnalyticsView />}
             {selectedTab === 'help' && <HelpView />}
@@ -350,21 +379,15 @@ const AppContent: React.FC = () => {
                           </label>
                           <label className="flex items-center justify-between cursor-pointer group">
                              <div className="space-y-0.5">
-                                <span className="text-xs font-bold text-white uppercase group-hover:text-blue-400 transition-colors">Boot with OS</span>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">Launch hidden kernel at login</p>
+                                <span className="text-xs font-bold text-white uppercase group-hover:text-blue-400 transition-colors">Kernel Simulation</span>
+                                <p className="text-[9px] text-slate-500 font-bold uppercase">Run UI in demo mode without hardware</p>
                              </div>
-                             <button className="w-12 h-6 bg-slate-800 rounded-full relative shadow-inner"><div className="w-4 h-4 bg-white rounded-full absolute top-1 left-1" /></button>
-                          </label>
-                          <label className="flex items-center justify-between cursor-pointer group">
-                             <div className="space-y-0.5">
-                                <span className="text-xs font-bold text-white uppercase group-hover:text-blue-400 transition-colors">Force Native Sync</span>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">Use high-priority driver threads</p>
-                             </div>
-                             <button className="w-12 h-6 bg-blue-600 rounded-full relative shadow-inner"><div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1" /></button>
+                             <button 
+                               onClick={() => setNotification({ message: "Demo mode activated. Simulating virtual inputs.", type: 'info' })}
+                               className="w-12 h-6 bg-slate-800 rounded-full relative shadow-inner"><div className="w-4 h-4 bg-white rounded-full absolute top-1 left-1" /></button>
                           </label>
                        </div>
                     </div>
-
                     <div className="bg-slate-900/40 p-10 rounded-[3rem] border border-white/5 space-y-8 shadow-2xl">
                        <h4 className="text-[10px] font-black text-purple-500 uppercase tracking-[0.3em]">Driver Updates</h4>
                        <div className="space-y-6">
@@ -415,32 +438,53 @@ const AppContent: React.FC = () => {
           onClose={() => setNotification(null)} 
         />
       )}
-
-      <style>{`
-        .drag-region { -webkit-app-region: drag; }
-        .no-drag { -webkit-app-region: no-drag; }
-        
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.3); }
-
-        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.05) transparent; }
-        
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow { animation: spin-slow 10s linear infinite; }
-      `}</style>
     </div>
   );
 };
 
 const App: React.FC = () => {
+  const [profiles, setProfiles] = useState<Profile[]>(() => {
+    const saved = localStorage.getItem('icore_profiles_v2');
+    return saved ? JSON.parse(saved) : DEFAULT_PROFILES;
+  });
+
+  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
+    return localStorage.getItem('icore_active_profile_id_v2') || profiles[0].id;
+  });
+
+  const activeProfile = useMemo(() => 
+    profiles.find(p => p.id === activeProfileId) || profiles[0], 
+  [profiles, activeProfileId]);
+
+  useEffect(() => {
+    localStorage.setItem('icore_profiles_v2', JSON.stringify(profiles));
+    localStorage.setItem('icore_active_profile_id_v2', activeProfileId);
+  }, [profiles, activeProfileId]);
+
+  const updateActiveProfile = (updates: Partial<Profile>) => {
+    setProfiles(prev => prev.map(p => p.id === activeProfileId ? { ...p, ...updates } : p));
+  };
+
+  const updateMapping = (btn: ControllerButton, updates: Partial<Mapping>) => {
+    setProfiles(prev => prev.map(p => {
+      if (p.id !== activeProfileId) return p;
+      const existing = p.mappings.find(m => m.button === btn);
+      const newMappings = existing 
+        ? p.mappings.map(m => m.button === btn ? { ...m, ...updates } : m)
+        : [...p.mappings, { button: btn, mappedTo: 'Unbound', type: 'KEYBOARD', ...updates } as Mapping];
+      return { ...p, mappings: newMappings };
+    }));
+  };
+
   return (
-    <GamepadProvider>
-      <AppContent />
+    <GamepadProvider activeProfile={activeProfile}>
+      <AppShell 
+        profiles={profiles} 
+        activeProfile={activeProfile}
+        setActiveProfileId={setActiveProfileId}
+        updateActiveProfile={updateActiveProfile}
+        updateMapping={updateMapping}
+      />
     </GamepadProvider>
   );
 };
