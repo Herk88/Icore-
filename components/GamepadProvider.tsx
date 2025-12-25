@@ -34,13 +34,38 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   const turboIntervalsRef = useRef<Record<string, { interval: any, burstCount: number, currentBurst: number }>>({});
   const profileRef = useRef(activeProfile);
   const aiTargetRef = useRef<{ x: number, y: number } | null>(null);
+  
+  // Aim Assist Persistence
+  const prevRightStickRef = useRef({ x: 0, y: 0 });
+  const snapActiveRef = useRef(false);
 
   useEffect(() => { profileRef.current = activeProfile; }, [activeProfile]);
 
+  const triggerHaptic = (gamepad: Gamepad, intensity: number = 0.5, duration: number = 50) => {
+    const profile = profileRef.current;
+    if (profile.accessibility.hapticFeedbackEnabled && gamepad.vibrationActuator) {
+      const strength = (profile.accessibility.hapticIntensity / 100) * intensity;
+      (gamepad.vibrationActuator as any).playEffect('dual-rumble', {
+        startDelay: 0,
+        duration: duration,
+        weakMagnitude: strength,
+        strongMagnitude: strength,
+      }).catch(() => {});
+    }
+  };
+
   const resetStickyStates = () => {
-    (Object.values(turboIntervalsRef.current) as any[]).forEach(t => clearInterval(t.interval));
+    Object.keys(turboIntervalsRef.current).forEach(key => {
+      clearInterval(turboIntervalsRef.current[key].interval);
+    });
     turboIntervalsRef.current = {};
-    setState(prev => ({ ...prev, stickyStates: {}, toggleStates: {}, turboTicks: {} }));
+    
+    setState(prev => ({ 
+      ...prev, 
+      stickyStates: {}, 
+      toggleStates: {}, 
+      turboTicks: {} 
+    }));
   };
 
   const updateGamepadState = () => {
@@ -52,11 +77,54 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       const rawButtons: Record<number, boolean> = {};
       gp.buttons.forEach((btn, idx) => { rawButtons[idx] = btn.pressed; });
 
+      // QUICK RELEASE COMBO: Share (8) + Options (9)
+      if (rawButtons[8] && rawButtons[9]) {
+        if (!lastButtonsRef.current[8] || !lastButtonsRef.current[9]) {
+          resetStickyStates();
+          triggerHaptic(gp, 0.8, 150);
+        }
+      }
+
       let translatedAxes = [...gp.axes];
       const rawAxes = [...gp.axes];
 
-      // NEURAL MAGNET PULL - Logic injection
-      // Deflects the Right Stick towards AI target
+      // --- ADVANCED AIM ASSIST ENGINE ---
+      
+      // 1. Aim Slowdown (Proximity Sensitivity Scaling)
+      // If target is in the "Slowdown Zone" (center FOV), reduce sensitivity
+      if (acc.aimSlowdownEnabled && aiTargetRef.current) {
+        const target = aiTargetRef.current;
+        const distFromCenter = Math.sqrt(Math.pow(target.x - 0.5, 2) + Math.pow(target.y - 0.5, 2));
+        const slowdownThreshold = 0.25; // Define the "Bubble" size
+        
+        if (distFromCenter < slowdownThreshold) {
+          // Linear slowdown based on proximity
+          const factor = 1 - (acc.autoAimStrength / 100) * (1 - distFromCenter / slowdownThreshold);
+          translatedAxes[2] *= factor; // RS-X
+          translatedAxes[3] *= factor; // RS-Y
+        }
+      }
+
+      // 2. Snap-to-Target (Initial ADS Pull)
+      // Triggers when L2 (Index 6) is newly pressed
+      if (acc.snapToTargetEnabled && rawButtons[6] && !lastButtonsRef.current[6] && aiTargetRef.current) {
+        const target = aiTargetRef.current;
+        const snapStrength = 0.45; // Fixed high-speed pull
+        translatedAxes[2] += (target.x - 0.5) * snapStrength;
+        translatedAxes[3] += (target.y - 0.5) * snapStrength;
+        triggerHaptic(gp, 0.6, 40);
+      }
+
+      // 3. Aim Stabilization (Low-Pass Smoothing)
+      if (acc.stabilizationMode !== 'Off') {
+        const strengthMap = { 'Light': 0.15, 'Medium': 0.35, 'Heavy': 0.65, 'Custom': acc.aimStabilizationStrength / 100 };
+        const lerpFactor = 1 - strengthMap[acc.stabilizationMode];
+        
+        translatedAxes[2] = prevRightStickRef.current.x + (translatedAxes[2] - prevRightStickRef.current.x) * lerpFactor;
+        translatedAxes[3] = prevRightStickRef.current.y + (translatedAxes[3] - prevRightStickRef.current.y) * lerpFactor;
+      }
+
+      // 4. NEURAL MAGNET PULL (Continuous Tracking)
       if (acc.yoloEnabled && aiTargetRef.current) {
         const target = aiTargetRef.current;
         const offsetX = target.x - 0.5;
@@ -66,12 +134,14 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         translatedAxes[3] += offsetY * pullStrength;
       }
 
-      // VERTICAL ANTI-RECOIL - Pulls down when R2 is active
-      if (acc.antiRecoilEnabled && rawButtons[7]) {
+      // 5. VERTICAL ANTI-RECOIL
+      if (acc.antiRecoilEnabled && rawButtons[7]) { 
         translatedAxes[3] += (acc.antiRecoilStrength / 100) * 0.45;
       }
 
-      // Clamp axes to valid hardware range
+      // Store current for next frame smoothing
+      prevRightStickRef.current = { x: translatedAxes[2], y: translatedAxes[3] };
+
       translatedAxes = translatedAxes.map(v => Math.max(-1, Math.min(1, v)));
       
       const newHeatmap = { ...state.heatmap };
@@ -88,13 +158,17 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
           if (btnName) {
             newTotalInputs++;
             newHeatmap[btnName] = (newHeatmap[btnName] || 0) + 1;
-            if (mapping?.isSticky) nextStickyStates[btnName] = !nextStickyStates[btnName];
+            if (mapping?.isSticky) {
+              nextStickyStates[btnName] = !nextStickyStates[btnName];
+              triggerHaptic(gp, nextStickyStates[btnName] ? 0.7 : 0.3, 60); 
+            } else {
+              triggerHaptic(gp, 0.4, 25);
+            }
           }
         }
 
         const isLogicalActive = physicalPressed || nextStickyStates[btnName];
 
-        // TURBO / BURST ENGINE
         if ((mapping?.isTurbo || (acc.rapidFireEnabled && btnName === 'R2')) && isLogicalActive) {
           if (!turboIntervalsRef.current[btnName]) {
             const rate = mapping?.turboSpeed || acc.globalTurboRate;
@@ -105,7 +179,8 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
               currentBurst: 0,
               interval: setInterval(() => {
                 const session = turboIntervalsRef.current[btnName];
-                if (!session || session.currentBurst >= session.burstCount) return;
+                if (!session) return;
+                if (session.currentBurst >= session.burstCount) return;
                 session.currentBurst++;
                 setState(prev => ({
                   ...prev,
@@ -144,7 +219,7 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
     requestRef.current = requestAnimationFrame(updateGamepadState);
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      (Object.values(turboIntervalsRef.current) as any[]).forEach(t => clearInterval(t.interval));
+      Object.keys(turboIntervalsRef.current).forEach(key => clearInterval(turboIntervalsRef.current[key].interval));
     };
   }, []);
 
@@ -157,6 +232,6 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
 
 export const useGamepad = () => {
   const context = useContext(GamepadContext);
-  if (!context) throw new Error('useGamepad error');
+  if (!context) throw new Error('useGamepad failure');
   return context;
 };

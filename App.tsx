@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GamepadProvider, useGamepad } from './components/GamepadProvider';
 import DualSenseSVG from './components/DualSenseSVG';
 import MappingList from './components/MappingList';
@@ -13,7 +13,9 @@ import { Profile, Mapping, ControllerButton, AccessibilitySettings } from './typ
 import { 
   Binary, Gamepad2, Layers, Activity, Settings, Zap, Lock, 
   BrainCircuit, ShieldAlert, FlaskConical, Terminal, HelpCircle,
-  X, Minus, Square, ChevronDown, Bell, Eye, EyeOff, Camera
+  X, Minus, Square, ChevronDown, Bell, Eye, EyeOff, Camera,
+  RefreshCcw, Sliders, Target, ShieldCheck, Cpu, Monitor, Search,
+  Compass, Crosshair, Sparkles
 } from 'lucide-react';
 
 const KernelMonitor: React.FC = () => {
@@ -27,13 +29,16 @@ const KernelMonitor: React.FC = () => {
         "KERNEL: Applying 12% Stick Deflection (Target Locked)",
         "SYSCALL: Virtual KB Send [SHIFT] -> Success",
         "HW_POLL: 1000Hz Stable",
-        "ANTI_RECOIL: Pulse Adjust (-0.02y)"
+        "ANTI_RECOIL: Pulse Adjust (-0.02y)",
+        "SYNC: Profile Hashes Verified",
+        "MEMORY: Kernel Buffer Optimized",
+        "HID: Polling interval 1.0ms achieved"
       ];
       setLogs(prev => [
         `[${new Date().toLocaleTimeString()}] ${messages[Math.floor(Math.random() * messages.length)]}`,
         ...prev
       ].slice(0, 50));
-    }, 2000);
+    }, 1500);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,11 +46,11 @@ const KernelMonitor: React.FC = () => {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6">
       <div className="bg-slate-950/80 rounded-[2.5rem] border border-white/5 p-8 h-[600px] overflow-y-auto custom-scrollbar font-mono text-[11px]">
         {logs.map((log, i) => (
-          <div key={i} className="mb-2 py-1 border-l-2 border-blue-500/30 pl-4 text-slate-400">
+          <div key={i} className={`mb-2 py-1 border-l-2 pl-4 ${log.includes('NEURAL') ? 'border-purple-500 text-purple-300' : 'border-blue-500/30 text-slate-400'}`}>
             {log}
           </div>
         ))}
-        {logs.length === 0 && <div className="h-full flex items-center justify-center text-slate-700 animate-pulse">Initializing Kernel Hook...</div>}
+        {logs.length === 0 && <div className="h-full flex items-center justify-center text-slate-700 animate-pulse font-black uppercase tracking-[0.3em]">Initializing Neural Kernel Hook...</div>}
       </div>
     </div>
   );
@@ -56,22 +61,37 @@ const AppShell: React.FC<{
   activeProfile: Profile,
   setActiveProfileId: (id: string) => void,
   updateActiveProfile: (updates: Partial<Profile>) => void,
-  updateMapping: (btn: ControllerButton, updates: Partial<Mapping>) => void
-}> = ({ profiles, activeProfile, setActiveProfileId, updateActiveProfile, updateMapping }) => {
+  updateMapping: (btn: ControllerButton, updates: Partial<Mapping>) => void,
+  detectedProcess: string | null
+}> = ({ profiles, activeProfile, setActiveProfileId, updateActiveProfile, updateMapping, detectedProcess }) => {
   const { state, resetStickyStates } = useGamepad();
   const [activeTab, setActiveTab] = useState<'eng' | 'stk' | 'tel' | 'tst' | 'ker' | 'srv' | 'hlp'>('eng');
   const [selectedButton, setSelectedButton] = useState<ControllerButton | null>(null);
-  const [deploying, setDeploying] = useState(false);
+  const [isEngaged, setIsEngaged] = useState(false);
+  const [runningProcesses, setRunningProcesses] = useState<string[]>([]);
+  const [showProcessList, setShowProcessList] = useState<string | null>(null);
 
   const currentMapping = activeProfile.mappings.find(m => m.button === selectedButton);
+
+  useEffect(() => {
+    const bridge = (window as any).icoreBridge;
+    if (bridge?.getRunningProcesses) {
+      bridge.getRunningProcesses().then(setRunningProcesses);
+    }
+  }, []);
 
   const updateAccessibility = (updates: Partial<AccessibilitySettings>) => {
     updateActiveProfile({ accessibility: { ...activeProfile.accessibility, ...updates } });
   };
 
-  const handleDeploy = () => {
-    setDeploying(true);
-    setTimeout(() => setDeploying(false), 2000);
+  const handleToggleEngage = () => {
+    setIsEngaged(!isEngaged);
+  };
+
+  const handleAssignProcess = (profileId: string, process: string | null) => {
+    const updatedProfiles = profiles.map(p => p.id === profileId ? { ...p, targetProcess: process || undefined } : p);
+    (window as any).setGlobalProfiles(updatedProfiles);
+    setShowProcessList(null);
   };
 
   return (
@@ -84,6 +104,12 @@ const AppShell: React.FC<{
         </div>
         <div className="flex items-center gap-8 no-drag">
           <div className="flex items-center gap-4">
+             {detectedProcess && (
+               <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full animate-in fade-in slide-in-from-top-2">
+                 <Monitor className="w-3 h-3 text-blue-400" />
+                 <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">{detectedProcess} Detected</span>
+               </div>
+             )}
             <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'} animate-pulse`} />
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{state.connected ? 'HID Link Active' : 'Waiting for USB...'}</span>
           </div>
@@ -145,7 +171,6 @@ const AppShell: React.FC<{
         <main className="flex-1 p-10 lg:p-14 overflow-y-auto custom-scrollbar relative">
            <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] pointer-events-none" />
            
-           {/* Header with Deployment Action */}
            <header className="flex justify-between items-start mb-14">
               <div className="space-y-1">
                  <h2 className="text-4xl font-black text-white uppercase tracking-tighter">
@@ -161,12 +186,11 @@ const AppShell: React.FC<{
               </div>
               <div className="flex gap-4">
                  <button 
-                  onClick={handleDeploy}
-                  disabled={deploying}
-                  className={`px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl ${deploying ? 'bg-slate-800 text-slate-500' : 'bg-blue-600 text-white shadow-blue-600/20 hover:scale-105 active:scale-95'}`}
+                  onClick={handleToggleEngage}
+                  className={`px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl border-2 ${isEngaged ? 'bg-red-600 border-red-400 text-white shadow-red-600/40' : 'bg-blue-600 border-blue-400 text-white shadow-blue-600/20 hover:scale-105 active:scale-95'}`}
                  >
-                    {deploying ? <Zap className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
-                    {deploying ? 'Deploying...' : 'Engage Protocol'}
+                    {isEngaged ? <Zap className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                    {isEngaged ? 'Protocol Engaged' : 'Engage Protocol'}
                  </button>
               </div>
            </header>
@@ -211,69 +235,101 @@ const AppShell: React.FC<{
                                    </div>
                                    <input type="range" min="5" max="50" value={currentMapping.turboSpeed || activeProfile.accessibility.globalTurboRate} onChange={(e) => updateMapping(selectedButton, { turboSpeed: parseInt(e.target.value) })} className="w-full accent-yellow-500" />
                                    
-                                   <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-white/5">
-                                      <span className="text-[10px] font-black uppercase">Burst Cycle (3-Shot)</span>
-                                      <button onClick={() => updateMapping(selectedButton, { burstMode: !currentMapping.burstMode })} className={`w-10 h-5 rounded-full relative transition-all ${currentMapping.burstMode ? 'bg-yellow-500' : 'bg-slate-800'}`}>
-                                        <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all ${currentMapping.burstMode ? 'right-0.5' : 'left-0.5'}`} />
-                                      </button>
+                                   <div className="space-y-3 pt-2">
+                                     <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-white/5">
+                                        <span className="text-[10px] font-black uppercase">Burst Cycle Mode</span>
+                                        <button onClick={() => updateMapping(selectedButton, { burstMode: !currentMapping.burstMode })} className={`w-10 h-5 rounded-full relative transition-all ${currentMapping.burstMode ? 'bg-yellow-500' : 'bg-slate-800'}`}>
+                                          <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all ${currentMapping.burstMode ? 'right-0.5' : 'left-0.5'}`} />
+                                        </button>
+                                     </div>
                                    </div>
                                 </div>
                               )}
                            </div>
                          </div>
                        ) : (
-                         <div className="space-y-8">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Neural Calibration</h4>
+                         <div className="space-y-6">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Aim Assistance Core</h4>
                             <div className="grid grid-cols-1 gap-4">
-                               <div className="p-6 bg-purple-600/5 border border-purple-500/20 rounded-[2rem] space-y-5">
+                               {/* Stabilization Presets */}
+                               <div className="p-6 bg-blue-600/5 border border-blue-500/20 rounded-[2rem] space-y-5">
+                                  <div className="flex justify-between items-center">
+                                     <div className="flex items-center gap-3">
+                                        <Crosshair className="w-5 h-5 text-blue-400" />
+                                        <span className="text-[10px] font-black uppercase text-white">Input Stabilization</span>
+                                     </div>
+                                  </div>
+                                  <div className="grid grid-cols-5 gap-1 bg-slate-950 p-1 rounded-xl border border-white/5">
+                                     {(['Off', 'Light', 'Medium', 'Heavy', 'Custom'] as const).map(mode => (
+                                       <button 
+                                         key={mode}
+                                         onClick={() => updateAccessibility({ stabilizationMode: mode })}
+                                         className={`py-2 rounded-lg text-[8px] font-black uppercase transition-all ${activeProfile.accessibility.stabilizationMode === mode ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                       >
+                                         {mode}
+                                       </button>
+                                     ))}
+                                  </div>
+                                  {activeProfile.accessibility.stabilizationMode === 'Custom' && (
+                                     <div className="space-y-2 animate-in slide-in-from-top-2">
+                                        <div className="flex justify-between text-[9px] font-black uppercase">
+                                           <span className="text-slate-500">Smooth Power</span>
+                                           <span className="text-blue-400">{activeProfile.accessibility.aimStabilizationStrength}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="100" value={activeProfile.accessibility.aimStabilizationStrength} onChange={(e) => updateAccessibility({ aimStabilizationStrength: parseInt(e.target.value) })} className="w-full accent-blue-500" />
+                                     </div>
+                                  )}
+                               </div>
+
+                               {/* Snap & Slowdown */}
+                               <div className="grid grid-cols-1 gap-4">
+                                  <div className="p-6 bg-emerald-600/5 border border-emerald-500/20 rounded-[2rem] space-y-4">
+                                     <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                           <Sparkles className="w-5 h-5 text-emerald-400" />
+                                           <span className="text-[10px] font-black uppercase text-white">Snap-to-Target (ADS)</span>
+                                        </div>
+                                        <button onClick={() => updateAccessibility({ snapToTargetEnabled: !activeProfile.accessibility.snapToTargetEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.snapToTargetEnabled ? 'bg-emerald-500' : 'bg-slate-800'}`}>
+                                           <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.snapToTargetEnabled ? 'right-1' : 'left-1'}`} />
+                                        </button>
+                                     </div>
+                                     <p className="text-[9px] text-slate-500 font-bold uppercase leading-tight">Instant pull toward detected targets when aiming down sights.</p>
+                                  </div>
+
+                                  <div className="p-6 bg-orange-600/5 border border-orange-500/20 rounded-[2rem] space-y-4">
+                                     <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                           <Compass className="w-5 h-5 text-orange-400" />
+                                           <span className="text-[10px] font-black uppercase text-white">Aim Slowdown Zone</span>
+                                        </div>
+                                        <button onClick={() => updateAccessibility({ aimSlowdownEnabled: !activeProfile.accessibility.aimSlowdownEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.aimSlowdownEnabled ? 'bg-orange-500' : 'bg-slate-800'}`}>
+                                           <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.aimSlowdownEnabled ? 'right-1' : 'left-1'}`} />
+                                        </button>
+                                     </div>
+                                     {activeProfile.accessibility.aimSlowdownEnabled && (
+                                       <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                          <div className="flex justify-between text-[9px] font-black uppercase">
+                                             <span className="text-slate-400">Slowdown Strength</span>
+                                             <span className="text-orange-400">{activeProfile.accessibility.autoAimStrength}%</span>
+                                          </div>
+                                          <input type="range" min="0" max="100" value={activeProfile.accessibility.autoAimStrength} onChange={(e) => updateAccessibility({ autoAimStrength: parseInt(e.target.value) })} className="w-full accent-orange-500" />
+                                       </div>
+                                     )}
+                                  </div>
+                               </div>
+
+                               {/* Legacy Neural Magnet (Redesigned as secondary pull) */}
+                               <div className="p-6 bg-purple-600/5 border border-purple-500/20 rounded-[2rem] space-y-4">
                                   <div className="flex justify-between items-center">
                                      <div className="flex items-center gap-3">
                                         <BrainCircuit className="w-5 h-5 text-purple-400" />
-                                        <span className="text-[10px] font-black uppercase text-white">AI Vision Magnet</span>
+                                        <span className="text-[10px] font-black uppercase text-white">Neural Magnet Pull</span>
                                      </div>
                                      <button onClick={() => updateAccessibility({ yoloEnabled: !activeProfile.accessibility.yoloEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.yoloEnabled ? 'bg-purple-500' : 'bg-slate-800'}`}>
                                        <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.yoloEnabled ? 'right-1' : 'left-1'}`} />
                                      </button>
                                   </div>
-                                  {activeProfile.accessibility.yoloEnabled && (
-                                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                        <div className="flex justify-between text-[9px] font-black uppercase">
-                                           <span className="text-slate-400">Stick Pull Strength</span>
-                                           <span className="text-purple-400">{activeProfile.accessibility.yoloTrackingPower}%</span>
-                                        </div>
-                                        <input type="range" min="0" max="100" value={activeProfile.accessibility.yoloTrackingPower} onChange={(e) => updateAccessibility({ yoloTrackingPower: parseInt(e.target.value) })} className="w-full accent-purple-500" />
-                                     </div>
-                                  )}
                                </div>
-
-                               <div className="p-6 bg-red-600/5 border border-red-500/20 rounded-[2rem] space-y-5">
-                                  <div className="flex justify-between items-center">
-                                     <div className="flex items-center gap-3">
-                                        <ShieldAlert className="w-5 h-5 text-red-400" />
-                                        <span className="text-[10px] font-black uppercase text-white">Anti-Recoil Compensator</span>
-                                     </div>
-                                     <button onClick={() => updateAccessibility({ antiRecoilEnabled: !activeProfile.accessibility.antiRecoilEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.antiRecoilEnabled ? 'bg-red-500' : 'bg-slate-800'}`}>
-                                       <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.antiRecoilEnabled ? 'right-1' : 'left-1'}`} />
-                                     </button>
-                                  </div>
-                                  {activeProfile.accessibility.antiRecoilEnabled && (
-                                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                        <div className="flex justify-between text-[9px] font-black uppercase">
-                                           <span className="text-slate-400">Vertical Compensation</span>
-                                           <span className="text-red-400">{activeProfile.accessibility.antiRecoilStrength}%</span>
-                                        </div>
-                                        <input type="range" min="0" max="100" value={activeProfile.accessibility.antiRecoilStrength} onChange={(e) => updateAccessibility({ antiRecoilStrength: parseInt(e.target.value) })} className="w-full accent-red-500" />
-                                     </div>
-                                  )}
-                               </div>
-                               
-                               <button onClick={() => updateAccessibility({ combatHudEnabled: !activeProfile.accessibility.combatHudEnabled })} className="w-full flex items-center justify-between p-5 bg-slate-900 border border-white/5 rounded-2xl hover:bg-slate-800 transition-colors">
-                                  <div className="flex items-center gap-4">
-                                     {activeProfile.accessibility.combatHudEnabled ? <Eye className="w-5 h-5 text-blue-400" /> : <EyeOff className="w-5 h-5 text-slate-500" />}
-                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Targeting HUD Overlay</span>
-                                  </div>
-                                  <div className={`w-2 h-2 rounded-full ${activeProfile.accessibility.combatHudEnabled ? 'bg-blue-500' : 'bg-slate-700'}`} />
-                               </button>
                             </div>
                          </div>
                        )}
@@ -288,21 +344,30 @@ const AppShell: React.FC<{
            {activeTab === 'stk' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-6">
                  {profiles.map(p => (
-                   <button 
-                    key={p.id} 
-                    onClick={() => setActiveProfileId(p.id)}
-                    className={`text-left p-10 rounded-[3rem] border transition-all relative group overflow-hidden ${activeProfile.id === p.id ? 'bg-blue-600/10 border-blue-500/50 shadow-2xl' : 'bg-slate-900/60 border-white/5 hover:border-white/10'}`}
-                   >
-                     <div className="flex justify-between items-start mb-6">
-                        <div className={`p-4 rounded-2xl ${activeProfile.id === p.id ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
-                           <Layers className="w-6 h-6" />
-                        </div>
-                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{p.category}</span>
-                     </div>
-                     <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">{p.name}</h3>
-                     <p className="text-[11px] text-slate-500 font-bold uppercase leading-relaxed">{p.description}</p>
-                     {activeProfile.id === p.id && <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/20 blur-[40px]" />}
-                   </button>
+                   <div key={p.id} className="relative group">
+                     <button 
+                      onClick={() => setActiveProfileId(p.id)}
+                      className={`w-full text-left p-10 rounded-[3rem] border transition-all relative overflow-hidden ${activeProfile.id === p.id ? 'bg-blue-600/10 border-blue-500/50 shadow-2xl' : 'bg-slate-900/60 border-white/5 hover:border-white/10'}`}
+                     >
+                       <div className="flex justify-between items-start mb-6">
+                          <div className={`p-4 rounded-2xl ${activeProfile.id === p.id ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                             <Layers className="w-6 h-6" />
+                          </div>
+                          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{p.category}</span>
+                       </div>
+                       <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">{p.name}</h3>
+                       <p className="text-[11px] text-slate-500 font-bold uppercase leading-relaxed mb-6">{p.description}</p>
+                       
+                       <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Monitor className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate max-w-[120px]">
+                              {p.targetProcess || 'No Process Linked'}
+                            </span>
+                          </div>
+                       </div>
+                     </button>
+                   </div>
                  ))}
               </div>
            )}
@@ -311,32 +376,27 @@ const AppShell: React.FC<{
            {activeTab === 'tst' && <TestingView profile={activeProfile} />}
            {activeTab === 'ker' && <KernelMonitor />}
            {activeTab === 'srv' && (
-              <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-10">
-                 <div className="glass p-10 rounded-[3rem] border border-white/5 space-y-8">
-                    <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.4em]">Engine Integration</h4>
-                    <div className="space-y-6">
-                       <div className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-white/5">
-                          <div>
-                             <p className="text-sm font-black text-white uppercase mb-1">Polling Frequency</p>
-                             <p className="text-[10px] text-slate-500 font-bold uppercase">HID kernel interrupt rate</p>
-                          </div>
-                          <select className="bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-xs font-black uppercase text-blue-400 outline-none">
-                             <option>125Hz</option>
-                             <option>500Hz</option>
-                             <option selected>1000Hz (Native)</option>
-                          </select>
-                       </div>
-                       
-                       <div className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-white/5">
-                          <div>
-                             <p className="text-sm font-black text-white uppercase mb-1">Training Auto-Capture</p>
-                             <p className="text-[10px] text-slate-500 font-bold uppercase">Screenshot on L2/R2 engagement</p>
-                          </div>
-                          <button onClick={() => updateAccessibility({ trainingAutoCapture: !activeProfile.accessibility.trainingAutoCapture })} className={`w-14 h-7 rounded-full relative transition-all ${activeProfile.accessibility.trainingAutoCapture ? 'bg-blue-600' : 'bg-slate-800'}`}>
-                             <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.trainingAutoCapture ? 'right-1' : 'left-1'}`} />
-                          </button>
-                       </div>
-                    </div>
+              <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-10">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="glass p-10 rounded-[3rem] border border-white/5 space-y-8">
+                      <div className="flex items-center gap-3">
+                         <Cpu className="w-5 h-5 text-blue-500" />
+                         <h4 className="text-[10px] font-black text-white uppercase tracking-[0.4em]">Hardware Config</h4>
+                      </div>
+                      <div className="space-y-6">
+                         <div className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-white/5">
+                            <div>
+                               <p className="text-sm font-black text-white uppercase mb-1">Polling Rate</p>
+                               <p className="text-[10px] text-slate-500 font-bold uppercase">HID kernel interrupt frequency</p>
+                            </div>
+                            <div className="flex gap-2">
+                               {[125, 500, 1000].map(rate => (
+                                 <button key={rate} onClick={() => updateActiveProfile({ pollingRate: rate as any })} className={`px-4 py-2 rounded-xl text-[10px] font-black border transition-all ${activeProfile.pollingRate === rate ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-900 border-white/10 text-slate-500'}`}>{rate}Hz</button>
+                               ))}
+                            </div>
+                         </div>
+                      </div>
+                   </div>
                  </div>
               </div>
            )}
@@ -347,13 +407,13 @@ const AppShell: React.FC<{
       {/* Persistence Indicator */}
       <div className="h-10 bg-slate-950 border-t border-white/5 flex items-center justify-between px-10">
          <div className="flex items-center gap-6">
-            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Polling_Rate: 1000Hz</span>
+            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Polling_Rate: {activeProfile.pollingRate}Hz</span>
             <div className="w-px h-3 bg-white/10" />
             <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Build: v2.4.0-Stable</span>
          </div>
          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-            <span className="text-[9px] font-black text-blue-500/60 uppercase tracking-widest">Profile Saved Automatically</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${isEngaged ? 'bg-red-500 shadow-[0_0_5px_#ef4444]' : 'bg-blue-500'}`} />
+            <span className={`text-[9px] font-black uppercase tracking-widest ${isEngaged ? 'text-red-500' : 'text-blue-500/60'}`}>{isEngaged ? 'ENGAGED - LOGGING ACTIVE' : 'Profile Standby'}</span>
          </div>
       </div>
     </div>
@@ -368,12 +428,30 @@ const App: React.FC = () => {
   const [activeId, setActiveId] = useState(() => {
     return localStorage.getItem('1m1m_active_id_v24') || profiles[0].id;
   });
+  const [detectedProcess, setDetectedProcess] = useState<string | null>(null);
 
   const activeProfile = useMemo(() => profiles.find(p => p.id === activeId) || profiles[0], [profiles, activeId]);
+
+  (window as any).setGlobalProfiles = setProfiles;
 
   useEffect(() => {
     localStorage.setItem('1m1m_profiles_v24', JSON.stringify(profiles));
     localStorage.setItem('1m1m_active_id_v24', activeId);
+  }, [profiles, activeId]);
+
+  useEffect(() => {
+    const bridge = (window as any).icoreBridge;
+    if (bridge?.onGameDetected) {
+      bridge.onGameDetected((procName: string | null) => {
+        setDetectedProcess(procName);
+        if (procName) {
+          const matchingProfile = profiles.find(p => p.targetProcess === procName);
+          if (matchingProfile && matchingProfile.id !== activeId) {
+            setActiveId(matchingProfile.id);
+          }
+        }
+      });
+    }
   }, [profiles, activeId]);
 
   const updateActiveProfile = (updates: Partial<Profile>) => {
@@ -399,6 +477,7 @@ const App: React.FC = () => {
         setActiveProfileId={setActiveId} 
         updateActiveProfile={updateActiveProfile} 
         updateMapping={updateMapping} 
+        detectedProcess={detectedProcess}
       />
     </GamepadProvider>
   );

@@ -39,24 +39,40 @@ const icoreBridge = {
     }, 8000);
   },
 
+  // Simulation: Get list of running processes
+  getRunningProcesses: async () => {
+    return [
+      'ModernWarfare.exe',
+      'eldenring.exe',
+      'FortniteClient-Win64-Shipping.exe',
+      'RainbowSix.exe',
+      'cod.exe',
+      'Valorant.exe',
+      'ApexLegends.exe',
+      'chrome.exe',
+      'discord.exe',
+      'spotify.exe'
+    ];
+  },
+
   // Game Process Detection Simulation
   onGameDetected: (callback: (processName: string | null) => void) => {
     const processes = [
       'ModernWarfare.exe',
       'eldenring.exe',
-      'chrome.exe',
-      'steam.exe',
-      null // Represents desktop/no game
+      'FortniteClient-Win64-Shipping.exe',
+      'RainbowSix.exe',
+      'cod.exe',
+      null
     ];
     
     setInterval(() => {
-      // Simulate erratic process switching for testing
-      if (Math.random() > 0.7) {
+      if (Math.random() > 0.85) {
         const proc = processes[Math.floor(Math.random() * processes.length)];
         console.log(`[IPC] Native: Process change detected -> ${proc || 'None'}`);
         callback(proc);
       }
-    }, 15000);
+    }, 12000);
   }
 };
 
