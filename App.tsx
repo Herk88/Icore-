@@ -5,122 +5,47 @@ import DualSenseSVG from './components/DualSenseSVG';
 import MappingList from './components/MappingList';
 import VirtualOutput from './components/VirtualOutput';
 import AnalyticsView from './components/AnalyticsView';
+import TestingView from './components/TestingView';
 import HelpView from './components/HelpView';
+import { CombatOverlay } from './components/CombatOverlay'; 
 import { DEFAULT_PROFILES } from './constants';
-import { Profile, ControllerButton, Mapping, AccessibilitySettings } from './types';
+import { Profile, Mapping, ControllerButton, AccessibilitySettings } from './types';
 import { 
-  Settings, Layers, Gamepad2, Activity, Cpu, ShieldCheck, Zap, 
-  Monitor, Target, Info, Lock, MousePointer2, X, Minus, Square, 
-  Bell, Terminal as TerminalIcon, ShieldAlert, Wifi, Database, 
-  HardDrive, Upload, RefreshCw, Eye, Filter, ChevronDown, Check
+  Binary, Gamepad2, Layers, Activity, Settings, Zap, Lock, 
+  BrainCircuit, ShieldAlert, FlaskConical, Terminal, HelpCircle,
+  X, Minus, Square, ChevronDown, Bell, Eye, EyeOff, Camera
 } from 'lucide-react';
-
-const TitleBar: React.FC = () => {
-  const bridge = (window as any).icoreBridge;
-
-  return (
-    <div className="h-10 bg-slate-950/90 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-4 select-none drag-region">
-      <div className="flex items-center gap-3">
-        <div className="w-5 h-5 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded flex items-center justify-center shadow-lg shadow-blue-500/20">
-          <Cpu className="text-white w-3 h-3" />
-        </div>
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">iCore <span className="text-blue-500">DualMap</span> <span className="text-slate-600">v{bridge?.version || '2.4.0'}</span></span>
-      </div>
-      <div className="flex items-center gap-6 no-drag">
-        <div className="flex items-center gap-2">
-           <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-           <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Kernel Active</span>
-        </div>
-        <div className="flex items-center">
-          <button onClick={() => bridge?.minimize()} className="p-2 text-slate-500 hover:text-white hover:bg-white/5 transition-colors"><Minus className="w-3.5 h-3.5" /></button>
-          <button onClick={() => bridge?.maximize()} className="p-2 text-slate-500 hover:text-white hover:bg-white/5 transition-colors"><Square className="w-3 h-3" /></button>
-          <button onClick={() => bridge?.close()} className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors"><X className="w-3.5 h-3.5" /></button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const SystemNotification: React.FC<{ message: string; type: 'info' | 'warn' | 'success'; onClose: () => void }> = ({ message, type, onClose }) => {
-  return (
-    <div className="fixed bottom-14 right-6 z-[200] w-80 bg-[#0a0a0b] border border-white/10 rounded-2xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in slide-in-from-right-10 flex gap-4 overflow-hidden backdrop-blur-2xl">
-      <div className={`w-1 h-full absolute left-0 top-0 ${type === 'success' ? 'bg-green-500' : type === 'warn' ? 'bg-amber-500' : 'bg-blue-500'}`} />
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${type === 'success' ? 'bg-green-500/10 text-green-500' : type === 'warn' ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
-        {type === 'success' ? <ShieldCheck className="w-5 h-5" /> : type === 'warn' ? <ShieldAlert className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
-      </div>
-      <div className="flex-1 space-y-1">
-        <h4 className="text-[10px] font-black text-white uppercase tracking-widest">HID Notification</h4>
-        <p className="text-[11px] text-slate-400 font-bold leading-tight">{message}</p>
-      </div>
-      <button onClick={onClose} className="text-slate-600 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
-    </div>
-  );
-};
 
 const KernelMonitor: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
-  const bridge = (window as any).icoreBridge;
-
+  
   useEffect(() => {
-    if (bridge?.onKernelLog) {
-      bridge.onKernelLog((newLog: string) => {
-        setLogs(prev => [newLog, ...prev].slice(0, 50));
-      });
-    }
-  }, [bridge]);
+    const interval = setInterval(() => {
+      const messages = [
+        "HID_INTERCEPT: L2 -> 0.42v (ADS_TRIGGER)",
+        "NEURAL_HOOK: HEAD_DETECTED (Conf: 94%)",
+        "KERNEL: Applying 12% Stick Deflection (Target Locked)",
+        "SYSCALL: Virtual KB Send [SHIFT] -> Success",
+        "HW_POLL: 1000Hz Stable",
+        "ANTI_RECOIL: Pulse Adjust (-0.02y)"
+      ];
+      setLogs(prev => [
+        `[${new Date().toLocaleTimeString()}] ${messages[Math.floor(Math.random() * messages.length)]}`,
+        ...prev
+      ].slice(0, 50));
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <header className="space-y-2">
-        <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Kernel Diagnostic Monitor</h2>
-        <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">Real-time driver log stream and HID descriptor validation.</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {[
-          { icon: HardDrive, label: 'Driver Thread', val: '0x001 - Active', sub: 'Priority: High', color: 'text-blue-500' },
-          { icon: Wifi, label: 'Polling Jitter', val: '0.002ms', sub: 'Target: 1.0ms', color: 'text-purple-500' },
-          { icon: Database, label: 'IRQ Queue', val: 'Empty', sub: 'Buffer: 1024KB', color: 'text-green-500' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-slate-900/40 p-8 rounded-[2rem] border border-white/5 space-y-6 shadow-2xl">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center ${stat.color}`}>
-                <stat.icon className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black text-white uppercase tracking-tighter">{stat.label}</h4>
-                <p className={`text-[10px] ${stat.color} font-black uppercase`}>{stat.val}</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase">
-                <span>Status</span>
-                <span>{stat.sub}</span>
-              </div>
-              <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                 <div className={`h-full bg-current ${stat.color} ${i === 2 ? 'w-full' : 'w-1/4'}`} />
-              </div>
-            </div>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6">
+      <div className="bg-slate-950/80 rounded-[2.5rem] border border-white/5 p-8 h-[600px] overflow-y-auto custom-scrollbar font-mono text-[11px]">
+        {logs.map((log, i) => (
+          <div key={i} className="mb-2 py-1 border-l-2 border-blue-500/30 pl-4 text-slate-400">
+            {log}
           </div>
         ))}
-      </div>
-
-      <div className="bg-slate-950/80 p-8 rounded-[2.5rem] border border-white/5 shadow-2xl font-mono text-[11px] backdrop-blur-xl">
-        <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
-          <span className="text-slate-500 uppercase font-black tracking-widest flex items-center gap-2">
-            <TerminalIcon className="w-3.5 h-3.5" /> Live Kernel Log
-          </span>
-          <span className="px-2 py-0.5 bg-green-500/10 text-green-500 rounded text-[9px] font-black">LOGGING ACTIVE</span>
-        </div>
-        <div className="space-y-2 opacity-80 h-48 overflow-y-auto custom-scrollbar">
-          {logs.length > 0 ? logs.map((log, i) => (
-            <p key={i} className="text-slate-400">
-              {log}
-            </p>
-          )) : (
-            <p className="text-slate-600 italic">Initializing kernel telemetry...</p>
-          )}
-        </div>
+        {logs.length === 0 && <div className="h-full flex items-center justify-center text-slate-700 animate-pulse">Initializing Kernel Hook...</div>}
       </div>
     </div>
   );
@@ -133,346 +58,336 @@ const AppShell: React.FC<{
   updateActiveProfile: (updates: Partial<Profile>) => void,
   updateMapping: (btn: ControllerButton, updates: Partial<Mapping>) => void
 }> = ({ profiles, activeProfile, setActiveProfileId, updateActiveProfile, updateMapping }) => {
-  const { state, setLayer, toggleGyro, resetStickyStates } = useGamepad();
-  const bridge = (window as any).icoreBridge;
-  
-  const [notification, setNotification] = useState<{ message: string; type: 'info' | 'warn' | 'success' } | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'controller' | 'profiles' | 'analytics' | 'kernel' | 'settings' | 'help'>('controller');
+  const { state, resetStickyStates } = useGamepad();
+  const [activeTab, setActiveTab] = useState<'eng' | 'stk' | 'tel' | 'tst' | 'ker' | 'srv' | 'hlp'>('eng');
   const [selectedButton, setSelectedButton] = useState<ControllerButton | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<'All' | 'Default' | 'Accessibility' | 'Game-Specific' | 'User'>('All');
+  const [deploying, setDeploying] = useState(false);
 
-  const filteredProfiles = useMemo(() => {
-    if (activeCategory === 'All') return profiles;
-    return profiles.filter(p => p.category === activeCategory);
-  }, [profiles, activeCategory]);
+  const currentMapping = activeProfile.mappings.find(m => m.button === selectedButton);
 
   const updateAccessibility = (updates: Partial<AccessibilitySettings>) => {
     updateActiveProfile({ accessibility: { ...activeProfile.accessibility, ...updates } });
   };
 
-  const currentMapping = activeProfile.mappings.find(m => m.button === selectedButton);
-
   const handleDeploy = () => {
-    setNotification({ message: "Syncing iCore Kernel with active stack...", type: 'info' });
-    setTimeout(() => {
-      setNotification({ message: `Successfully deployed profile: ${activeProfile.name}`, type: 'success' });
-    }, 800);
+    setDeploying(true);
+    setTimeout(() => setDeploying(false), 2000);
   };
 
   return (
-    <div className={`h-screen flex flex-col bg-[#050505] text-slate-200 selection:bg-blue-500/30 overflow-hidden font-sans`}>
-      <TitleBar />
+    <div className="h-screen flex flex-col bg-[#050505] text-slate-200 overflow-hidden font-sans">
+      {/* OS-Style Titlebar */}
+      <div className="h-12 bg-slate-950 border-b border-white/5 flex items-center justify-between px-6 drag-region">
+        <div className="flex items-center gap-3">
+          <Binary className="text-blue-500 w-5 h-5" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">1Man1Machine // Neural_Kernel_v2.4</span>
+        </div>
+        <div className="flex items-center gap-8 no-drag">
+          <div className="flex items-center gap-4">
+            <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'} animate-pulse`} />
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{state.connected ? 'HID Link Active' : 'Waiting for USB...'}</span>
+          </div>
+          <div className="flex items-center">
+             <button className="p-2 text-slate-600 hover:text-white transition-colors"><Minus className="w-4 h-4" /></button>
+             <button className="p-2 text-slate-600 hover:text-white transition-colors"><Square className="w-3.5 h-3.5" /></button>
+             <button className="p-2 text-slate-600 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-20 lg:w-64 bg-slate-950 border-r border-white/5 flex flex-col items-center py-8 px-4 gap-8 z-30 shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center gap-3 lg:self-start lg:pl-4 group cursor-pointer" onClick={() => setSelectedTab('controller')}>
-            <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 transition-transform group-hover:rotate-12">
-              <Cpu className="text-white w-6 h-6" />
-            </div>
-            <h1 className="hidden lg:block font-black text-lg tracking-tighter text-white uppercase">iCore <span className="text-blue-500">Desktop</span></h1>
-          </div>
+        {/* Sidebar Navigation */}
+        <aside className="w-20 lg:w-72 bg-slate-950 border-r border-white/5 flex flex-col py-10 px-6 gap-8 z-20 shadow-2xl">
+           <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
+                <Binary className="text-white w-6 h-6" />
+              </div>
+              <div className="hidden lg:block">
+                <h1 className="font-black text-xl uppercase tracking-tighter">1M1M</h1>
+                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Neural Performance</p>
+              </div>
+           </div>
+           
+           <nav className="space-y-2 flex-1">
+              {[
+                { id: 'eng', icon: Gamepad2, label: 'Engine' },
+                { id: 'stk', icon: Layers, label: 'Stacks' },
+                { id: 'tel', icon: Activity, label: 'Telemetry' },
+                { id: 'tst', icon: FlaskConical, label: 'Testing' },
+                { id: 'ker', icon: Terminal, label: 'Kernel' },
+                { id: 'srv', icon: Settings, label: 'Service' },
+                { id: 'hlp', icon: HelpCircle, label: 'Help' },
+              ].map(item => (
+                <button 
+                  key={item.id} 
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all relative group ${activeTab === item.id ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' : 'text-slate-500 hover:bg-white/5'}`}
+                >
+                  <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-blue-500' : 'group-hover:text-slate-200'}`} />
+                  <span className="hidden lg:block text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+                  {activeTab === item.id && <div className="absolute left-0 top-3 bottom-3 w-1 bg-blue-500 rounded-full" />}
+                </button>
+              ))}
+           </nav>
 
-          <nav className="flex flex-col gap-2 w-full">
-            {[
-              { id: 'controller', icon: Gamepad2, label: 'Engine' },
-              { id: 'profiles', icon: Layers, label: 'Stacks' },
-              { id: 'analytics', icon: Activity, label: 'Telemetry' },
-              { id: 'kernel', icon: TerminalIcon, label: 'Kernel' },
-              { id: 'settings', icon: Settings, label: 'Service' },
-              { id: 'help', icon: Info, label: 'User Guide' },
-            ].map((item) => (
-              <button 
-                key={item.id}
-                onClick={() => setSelectedTab(item.id as any)}
-                className={`flex items-center gap-4 p-3.5 rounded-2xl transition-all relative group ${selectedTab === item.id ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
-              >
-                <item.icon className={`w-5 h-5 transition-transform group-hover:scale-110 ${selectedTab === item.id ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''}`} />
-                <span className="hidden lg:block font-bold text-[10px] uppercase tracking-[0.2em]">{item.label}</span>
-                {selectedTab === item.id && <div className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]" />}
-              </button>
-            ))}
-          </nav>
-
-          <div className="mt-auto w-full space-y-4">
-             <div className="p-4 bg-slate-900/40 rounded-2xl border border-white/5">
-                <div className="flex items-center justify-between mb-2">
-                   <span className="text-[9px] font-black text-slate-600 uppercase">SYS STABILITY</span>
-                   <span className="text-[9px] font-black text-green-500">OPTIMAL</span>
-                </div>
-                <div className="w-full h-1 bg-slate-800 rounded-full">
-                   <div className="h-full bg-green-500 w-full" />
-                </div>
-             </div>
-             <button 
-              onClick={() => updateAccessibility({ highContrastEnabled: !activeProfile.accessibility.highContrastEnabled })}
-              className="w-full p-4 rounded-2xl border border-white/5 text-slate-500 hover:text-white hover:bg-white/5 transition-all flex items-center justify-center shadow-xl"
-             >
-                <Eye className="w-5 h-5" />
-             </button>
-          </div>
+           <div className="p-5 bg-slate-900/50 rounded-2xl border border-white/5">
+              <div className="flex justify-between items-center mb-2">
+                 <span className="text-[8px] font-black text-slate-500 uppercase">Sys_Nominal</span>
+                 <div className="w-2 h-2 rounded-full bg-green-500" />
+              </div>
+              <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                 <div className="h-full bg-blue-500 w-full animate-pulse" />
+              </div>
+           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col overflow-hidden relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-transparent to-transparent pointer-events-none" />
-          
-          <div className="flex-1 p-8 lg:p-12 overflow-y-auto custom-scrollbar">
-            {selectedTab === 'controller' && (
-              <>
-                <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12">
-                  <div className="space-y-1">
-                    <h2 className="text-4xl font-black text-white tracking-tighter uppercase flex items-center gap-4">
-                      iCore Engine
-                      <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.6)] animate-pulse" />
-                    </h2>
-                    <p className="text-slate-500 font-bold text-xs uppercase tracking-[0.2em]">Target Virtual Output: <span className="text-blue-500">{activeProfile.virtualOutput}</span></p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button className="px-6 py-3.5 bg-slate-900/50 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-3">
-                       <Upload className="w-4 h-4" /> Import Backup
-                    </button>
-                    <button 
-                      onClick={handleDeploy}
-                      className="px-8 py-3.5 bg-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 hover:scale-105 active:scale-95 transition-all text-white font-bold"
-                    >
-                       Deploy to HID
-                    </button>
-                  </div>
-                </header>
-
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
-                  <div className="xl:col-span-7 space-y-12">
-                    <DualSenseSVG selectedButton={selectedButton} onSelectButton={setSelectedButton} showHeatmap={showHeatmap} />
-                    <VirtualOutput profile={activeProfile} />
-                  </div>
-                  <div className="xl:col-span-5 space-y-8">
-                    <div className="bg-slate-900/40 border border-white/5 rounded-[3rem] p-10 shadow-2xl backdrop-blur-3xl relative overflow-hidden">
-                      {selectedButton ? (
-                        <div className="animate-in fade-in slide-in-from-right-8 duration-500 space-y-8">
-                          <div className="flex justify-between items-start">
-                             <div className="space-y-1">
-                               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hook Selected</span>
-                               <h3 className="text-4xl font-black text-white uppercase tracking-tighter">{selectedButton}</h3>
-                             </div>
-                             <div className="flex gap-3">
-                               <button 
-                                onClick={() => {
-                                  updateMapping(selectedButton, { isTurbo: !currentMapping?.isTurbo });
-                                  if (bridge?.engageTurbo) bridge.engageTurbo(selectedButton!, activeProfile.accessibility.globalTurboRate);
-                                }}
-                                title="Toggle Turbo"
-                                className={`p-4 rounded-2xl border transition-all ${currentMapping?.isTurbo ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.2)]' : 'bg-slate-800/50 border-white/5 text-slate-500'}`}
-                               >
-                                 <Zap className="w-6 h-6" />
-                               </button>
-                               <button 
-                                onClick={() => updateMapping(selectedButton, { isSticky: !currentMapping?.isSticky })}
-                                title="Toggle Sticky"
-                                className={`p-4 rounded-2xl border transition-all ${currentMapping?.isSticky ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]' : 'bg-slate-800/50 border-white/5 text-slate-500'}`}
-                               >
-                                 <Lock className="w-6 h-6" />
-                               </button>
-                             </div>
-                          </div>
-                          
-                          <div className="bg-slate-950 p-8 rounded-[2.5rem] border border-white/5 space-y-6 shadow-inner">
-                             <div className="flex justify-between items-center text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                                <span>Output Descriptor</span>
-                                <span className="text-blue-500">{currentMapping?.type || 'UNBOUND'}</span>
-                             </div>
-                             <div className="flex items-center justify-between">
-                               <span className="text-3xl font-black text-white tracking-tighter uppercase">{currentMapping?.mappedTo || 'Not Assigned'}</span>
-                               <button onClick={() => {
-                                 const key = prompt('Hardware intercept target:');
-                                 if (key) updateMapping(selectedButton, { mappedTo: key });
-                               }} className="px-6 py-3 bg-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white hover:scale-105 transition-transform">Change Bind</button>
-                             </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="py-24 text-center space-y-6 opacity-30 group cursor-default">
-                           <MousePointer2 className="w-16 h-16 mx-auto group-hover:scale-110 transition-transform" />
-                           <p className="text-sm font-black uppercase tracking-[0.3em]">Link Hardware Component</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="bg-slate-900/40 border border-white/5 rounded-[2.5rem] p-10 shadow-2xl backdrop-blur-xl">
-                      <MappingList profile={activeProfile} onUpdateMapping={() => {}} />
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {selectedTab === 'profiles' && (
-              <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-500">
-                <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="space-y-1">
-                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Stack Repository</h2>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Configure hardware mapping libraries</p>
-                  </div>
-                  <div className="flex items-center gap-2 p-1.5 bg-slate-950/50 rounded-2xl border border-white/5">
-                    {(['All', 'Default', 'Accessibility', 'Game-Specific', 'User'] as const).map(cat => (
-                      <button 
-                        key={cat}
-                        onClick={() => setActiveCategory(cat)}
-                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeCategory === cat ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-white'}`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </header>
-
-                {filteredProfiles.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredProfiles.map(p => (
-                      <button 
-                        key={p.id}
-                        onClick={() => setActiveProfileId(p.id)}
-                        className={`text-left p-8 rounded-[2.5rem] border transition-all group relative overflow-hidden ${activeProfile.id === p.id ? 'bg-blue-600/10 border-blue-500/50 shadow-2xl' : 'bg-slate-900/40 border-white/5 hover:border-white/10'}`}
-                      >
-                        {activeProfile.id === p.id && (
-                          <div className="absolute top-0 right-0 p-4 animate-in zoom-in duration-300">
-                             <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center border-2 border-[#050505]">
-                               <Check className="w-3.5 h-3.5 text-white" />
-                             </div>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-start mb-6">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${activeProfile.id === p.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500 group-hover:bg-slate-700 transition-colors'}`}>
-                            <Layers className="w-6 h-6" />
-                          </div>
-                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-white/5 ${activeProfile.id === p.id ? 'text-blue-400' : 'text-slate-600'}`}>{p.category}</span>
-                        </div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-2 group-hover:text-blue-400 transition-colors">{p.name}</h3>
-                        <p className="text-xs text-slate-500 font-bold uppercase leading-tight">{p.description || "Custom mapping stack descriptor"}</p>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-32 text-center glass rounded-[3rem] border-dashed border-white/10">
-                     <Filter className="w-12 h-12 text-slate-800 mx-auto mb-4" />
-                     <p className="text-xs font-black text-slate-700 uppercase tracking-widest">No profiles found in {activeCategory} category</p>
-                  </div>
-                )}
+        {/* Main Content Area */}
+        <main className="flex-1 p-10 lg:p-14 overflow-y-auto custom-scrollbar relative">
+           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] pointer-events-none" />
+           
+           {/* Header with Deployment Action */}
+           <header className="flex justify-between items-start mb-14">
+              <div className="space-y-1">
+                 <h2 className="text-4xl font-black text-white uppercase tracking-tighter">
+                   {activeTab === 'eng' && 'Kernel Engine'}
+                   {activeTab === 'stk' && 'Stack Repository'}
+                   {activeTab === 'tel' && 'Telemetry Visualizer'}
+                   {activeTab === 'tst' && 'Hardware Calibration'}
+                   {activeTab === 'ker' && 'Low-Level Monitor'}
+                   {activeTab === 'srv' && 'Service Control'}
+                   {activeTab === 'hlp' && 'Onboarding'}
+                 </h2>
+                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Stack: <span className="text-blue-500">{activeProfile.name}</span></p>
               </div>
-            )}
+              <div className="flex gap-4">
+                 <button 
+                  onClick={handleDeploy}
+                  disabled={deploying}
+                  className={`px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl ${deploying ? 'bg-slate-800 text-slate-500' : 'bg-blue-600 text-white shadow-blue-600/20 hover:scale-105 active:scale-95'}`}
+                 >
+                    {deploying ? <Zap className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+                    {deploying ? 'Deploying...' : 'Engage Protocol'}
+                 </button>
+              </div>
+           </header>
 
-            {selectedTab === 'kernel' && <KernelMonitor />}
-            {selectedTab === 'analytics' && <AnalyticsView />}
-            {selectedTab === 'help' && <HelpView />}
-            
-            {selectedTab === 'settings' && (
-              <div className="max-w-4xl space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                 <h2 className="text-4xl font-black text-white tracking-tighter uppercase">Service Control</h2>
+           {activeTab === 'eng' && (
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-16">
+                 <div className="xl:col-span-7 space-y-12 animate-in fade-in slide-in-from-left-6">
+                    <CombatOverlay profile={activeProfile} />
+                    <DualSenseSVG selectedButton={selectedButton} onSelectButton={setSelectedButton} />
+                    <VirtualOutput profile={activeProfile} />
+                 </div>
                  
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-slate-900/40 p-10 rounded-[3rem] border border-white/5 space-y-8 shadow-2xl">
-                       <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">Shell Integration</h4>
-                       <div className="space-y-6">
-                          <label className="flex items-center justify-between cursor-pointer group">
-                             <div className="space-y-0.5">
-                                <span className="text-xs font-bold text-white uppercase group-hover:text-blue-400 transition-colors">OS Toasts</span>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">Show system alerts for stack changes</p>
-                             </div>
-                             <button className="w-12 h-6 bg-blue-600 rounded-full relative shadow-inner"><div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1" /></button>
-                          </label>
-                          <label className="flex items-center justify-between cursor-pointer group">
-                             <div className="space-y-0.5">
-                                <span className="text-xs font-bold text-white uppercase group-hover:text-blue-400 transition-colors">Kernel Simulation</span>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">Run UI in demo mode without hardware</p>
-                             </div>
-                             <button 
-                               onClick={() => setNotification({ message: "Demo mode activated. Simulating virtual inputs.", type: 'info' })}
-                               className="w-12 h-6 bg-slate-800 rounded-full relative shadow-inner"><div className="w-4 h-4 bg-white rounded-full absolute top-1 left-1" /></button>
-                          </label>
-                       </div>
+                 <div className="xl:col-span-5 space-y-8 animate-in fade-in slide-in-from-right-6">
+                    <div className="glass p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
+                       {selectedButton ? (
+                         <div className="space-y-8 animate-in zoom-in-95">
+                           <div className="flex justify-between items-start">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware Port</span>
+                                <h3 className="text-5xl font-black text-white uppercase tracking-tighter">{selectedButton}</h3>
+                              </div>
+                              <div className="flex gap-3">
+                                 <button onClick={() => updateMapping(selectedButton, { isTurbo: !currentMapping?.isTurbo })} className={`p-4 rounded-2xl border transition-all ${currentMapping?.isTurbo ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-500 shadow-[0_0_20px_#eab30820]' : 'bg-slate-800 border-white/5'}`}><Zap className="w-5 h-5" /></button>
+                                 <button onClick={() => updateMapping(selectedButton, { isSticky: !currentMapping?.isSticky })} className={`p-4 rounded-2xl border transition-all ${currentMapping?.isSticky ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 shadow-[0_0_20px_#f59e0b20]' : 'bg-slate-800 border-white/5'}`}><Lock className="w-5 h-5" /></button>
+                              </div>
+                           </div>
+
+                           <div className="bg-slate-950/50 p-6 rounded-2xl border border-white/5 space-y-6">
+                              <div className="space-y-3">
+                                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Virtual Output Binding</span>
+                                <div className="flex gap-3">
+                                   <div className="flex-1 bg-slate-900 border border-white/5 p-4 rounded-xl text-lg font-black uppercase text-white tracking-widest">{currentMapping?.mappedTo || 'Unbound'}</div>
+                                   <button onClick={() => { const val = prompt('Enter Key:'); if(val) updateMapping(selectedButton, { mappedTo: val.toUpperCase() }) }} className="px-6 py-4 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Bind</button>
+                                </div>
+                              </div>
+
+                              {currentMapping?.isTurbo && (
+                                <div className="space-y-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-4">
+                                   <div className="flex justify-between text-[10px] font-black uppercase">
+                                      <span className="text-yellow-500">Turbo Freq</span>
+                                      <span>{currentMapping.turboSpeed || activeProfile.accessibility.globalTurboRate}Hz</span>
+                                   </div>
+                                   <input type="range" min="5" max="50" value={currentMapping.turboSpeed || activeProfile.accessibility.globalTurboRate} onChange={(e) => updateMapping(selectedButton, { turboSpeed: parseInt(e.target.value) })} className="w-full accent-yellow-500" />
+                                   
+                                   <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-white/5">
+                                      <span className="text-[10px] font-black uppercase">Burst Cycle (3-Shot)</span>
+                                      <button onClick={() => updateMapping(selectedButton, { burstMode: !currentMapping.burstMode })} className={`w-10 h-5 rounded-full relative transition-all ${currentMapping.burstMode ? 'bg-yellow-500' : 'bg-slate-800'}`}>
+                                        <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all ${currentMapping.burstMode ? 'right-0.5' : 'left-0.5'}`} />
+                                      </button>
+                                   </div>
+                                </div>
+                              )}
+                           </div>
+                         </div>
+                       ) : (
+                         <div className="space-y-8">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Neural Calibration</h4>
+                            <div className="grid grid-cols-1 gap-4">
+                               <div className="p-6 bg-purple-600/5 border border-purple-500/20 rounded-[2rem] space-y-5">
+                                  <div className="flex justify-between items-center">
+                                     <div className="flex items-center gap-3">
+                                        <BrainCircuit className="w-5 h-5 text-purple-400" />
+                                        <span className="text-[10px] font-black uppercase text-white">AI Vision Magnet</span>
+                                     </div>
+                                     <button onClick={() => updateAccessibility({ yoloEnabled: !activeProfile.accessibility.yoloEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.yoloEnabled ? 'bg-purple-500' : 'bg-slate-800'}`}>
+                                       <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.yoloEnabled ? 'right-1' : 'left-1'}`} />
+                                     </button>
+                                  </div>
+                                  {activeProfile.accessibility.yoloEnabled && (
+                                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                        <div className="flex justify-between text-[9px] font-black uppercase">
+                                           <span className="text-slate-400">Stick Pull Strength</span>
+                                           <span className="text-purple-400">{activeProfile.accessibility.yoloTrackingPower}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="100" value={activeProfile.accessibility.yoloTrackingPower} onChange={(e) => updateAccessibility({ yoloTrackingPower: parseInt(e.target.value) })} className="w-full accent-purple-500" />
+                                     </div>
+                                  )}
+                               </div>
+
+                               <div className="p-6 bg-red-600/5 border border-red-500/20 rounded-[2rem] space-y-5">
+                                  <div className="flex justify-between items-center">
+                                     <div className="flex items-center gap-3">
+                                        <ShieldAlert className="w-5 h-5 text-red-400" />
+                                        <span className="text-[10px] font-black uppercase text-white">Anti-Recoil Compensator</span>
+                                     </div>
+                                     <button onClick={() => updateAccessibility({ antiRecoilEnabled: !activeProfile.accessibility.antiRecoilEnabled })} className={`w-12 h-6 rounded-full relative transition-all ${activeProfile.accessibility.antiRecoilEnabled ? 'bg-red-500' : 'bg-slate-800'}`}>
+                                       <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.antiRecoilEnabled ? 'right-1' : 'left-1'}`} />
+                                     </button>
+                                  </div>
+                                  {activeProfile.accessibility.antiRecoilEnabled && (
+                                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                        <div className="flex justify-between text-[9px] font-black uppercase">
+                                           <span className="text-slate-400">Vertical Compensation</span>
+                                           <span className="text-red-400">{activeProfile.accessibility.antiRecoilStrength}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="100" value={activeProfile.accessibility.antiRecoilStrength} onChange={(e) => updateAccessibility({ antiRecoilStrength: parseInt(e.target.value) })} className="w-full accent-red-500" />
+                                     </div>
+                                  )}
+                               </div>
+                               
+                               <button onClick={() => updateAccessibility({ combatHudEnabled: !activeProfile.accessibility.combatHudEnabled })} className="w-full flex items-center justify-between p-5 bg-slate-900 border border-white/5 rounded-2xl hover:bg-slate-800 transition-colors">
+                                  <div className="flex items-center gap-4">
+                                     {activeProfile.accessibility.combatHudEnabled ? <Eye className="w-5 h-5 text-blue-400" /> : <EyeOff className="w-5 h-5 text-slate-500" />}
+                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Targeting HUD Overlay</span>
+                                  </div>
+                                  <div className={`w-2 h-2 rounded-full ${activeProfile.accessibility.combatHudEnabled ? 'bg-blue-500' : 'bg-slate-700'}`} />
+                               </button>
+                            </div>
+                         </div>
+                       )}
                     </div>
-                    <div className="bg-slate-900/40 p-10 rounded-[3rem] border border-white/5 space-y-8 shadow-2xl">
-                       <h4 className="text-[10px] font-black text-purple-500 uppercase tracking-[0.3em]">Driver Updates</h4>
-                       <div className="space-y-6">
-                          <div className="p-6 bg-slate-950 rounded-[1.5rem] border border-white/5 space-y-4 shadow-inner">
-                             <div className="flex items-center gap-4">
-                                <div className="px-3 py-1 bg-purple-500/10 text-purple-500 border border-purple-500/20 rounded-md text-[9px] font-black uppercase tracking-widest">Stable Release</div>
-                                <span className="text-[10px] font-bold text-slate-500">v{bridge?.version || '2.4.0'}</span>
-                             </div>
-                             <p className="text-[10px] text-slate-500 uppercase font-black">All systems report nominal stability.</p>
+                    <div className="glass p-8 rounded-[3rem] shadow-xl">
+                       <MappingList profile={activeProfile} onSelectButton={setSelectedButton} onUpdateMapping={() => {}} />
+                    </div>
+                 </div>
+              </div>
+           )}
+
+           {activeTab === 'stk' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-6">
+                 {profiles.map(p => (
+                   <button 
+                    key={p.id} 
+                    onClick={() => setActiveProfileId(p.id)}
+                    className={`text-left p-10 rounded-[3rem] border transition-all relative group overflow-hidden ${activeProfile.id === p.id ? 'bg-blue-600/10 border-blue-500/50 shadow-2xl' : 'bg-slate-900/60 border-white/5 hover:border-white/10'}`}
+                   >
+                     <div className="flex justify-between items-start mb-6">
+                        <div className={`p-4 rounded-2xl ${activeProfile.id === p.id ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                           <Layers className="w-6 h-6" />
+                        </div>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{p.category}</span>
+                     </div>
+                     <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">{p.name}</h3>
+                     <p className="text-[11px] text-slate-500 font-bold uppercase leading-relaxed">{p.description}</p>
+                     {activeProfile.id === p.id && <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/20 blur-[40px]" />}
+                   </button>
+                 ))}
+              </div>
+           )}
+
+           {activeTab === 'tel' && <AnalyticsView />}
+           {activeTab === 'tst' && <TestingView profile={activeProfile} />}
+           {activeTab === 'ker' && <KernelMonitor />}
+           {activeTab === 'srv' && (
+              <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-10">
+                 <div className="glass p-10 rounded-[3rem] border border-white/5 space-y-8">
+                    <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.4em]">Engine Integration</h4>
+                    <div className="space-y-6">
+                       <div className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-white/5">
+                          <div>
+                             <p className="text-sm font-black text-white uppercase mb-1">Polling Frequency</p>
+                             <p className="text-[10px] text-slate-500 font-bold uppercase">HID kernel interrupt rate</p>
                           </div>
-                          <button className="w-full py-5 bg-white/5 border border-white/10 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all text-slate-200">
-                             Check Update Servers
+                          <select className="bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-xs font-black uppercase text-blue-400 outline-none">
+                             <option>125Hz</option>
+                             <option>500Hz</option>
+                             <option selected>1000Hz (Native)</option>
+                          </select>
+                       </div>
+                       
+                       <div className="flex items-center justify-between p-6 bg-slate-950/50 rounded-2xl border border-white/5">
+                          <div>
+                             <p className="text-sm font-black text-white uppercase mb-1">Training Auto-Capture</p>
+                             <p className="text-[10px] text-slate-500 font-bold uppercase">Screenshot on L2/R2 engagement</p>
+                          </div>
+                          <button onClick={() => updateAccessibility({ trainingAutoCapture: !activeProfile.accessibility.trainingAutoCapture })} className={`w-14 h-7 rounded-full relative transition-all ${activeProfile.accessibility.trainingAutoCapture ? 'bg-blue-600' : 'bg-slate-800'}`}>
+                             <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-all ${activeProfile.accessibility.trainingAutoCapture ? 'right-1' : 'left-1'}`} />
                           </button>
                        </div>
                     </div>
                  </div>
               </div>
-            )}
-          </div>
-
-          <footer className="h-10 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 flex items-center justify-between px-8 select-none">
-            <div className="flex items-center gap-8">
-              <div className="flex items-center gap-3">
-                 <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.1em]">{state.connected ? 'DualSense Engaged' : 'Disconnected'}</span>
-              </div>
-              <div className="w-px h-4 bg-white/10" />
-              <div className="flex items-center gap-3">
-                 <RefreshCw className={`w-3.5 h-3.5 text-blue-500 ${state.connected ? 'animate-spin-slow' : ''}`} />
-                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.1em]">Kernel Pool: 1000Hz</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                 <TerminalIcon className="w-3.5 h-3.5 text-slate-600" />
-                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Interrupts: {state.totalInputs}</span>
-              </div>
-              <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">BUILD_ID_8841</span>
-            </div>
-          </footer>
+           )}
+           {activeTab === 'hlp' && <HelpView />}
         </main>
       </div>
 
-      {notification && (
-        <SystemNotification 
-          message={notification.message} 
-          type={notification.type} 
-          onClose={() => setNotification(null)} 
-        />
-      )}
+      {/* Persistence Indicator */}
+      <div className="h-10 bg-slate-950 border-t border-white/5 flex items-center justify-between px-10">
+         <div className="flex items-center gap-6">
+            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Polling_Rate: 1000Hz</span>
+            <div className="w-px h-3 bg-white/10" />
+            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Build: v2.4.0-Stable</span>
+         </div>
+         <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+            <span className="text-[9px] font-black text-blue-500/60 uppercase tracking-widest">Profile Saved Automatically</span>
+         </div>
+      </div>
     </div>
   );
 };
 
 const App: React.FC = () => {
   const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const saved = localStorage.getItem('icore_profiles_v2');
+    const saved = localStorage.getItem('1m1m_profiles_v24');
     return saved ? JSON.parse(saved) : DEFAULT_PROFILES;
   });
-
-  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
-    return localStorage.getItem('icore_active_profile_id_v2') || profiles[0].id;
+  const [activeId, setActiveId] = useState(() => {
+    return localStorage.getItem('1m1m_active_id_v24') || profiles[0].id;
   });
 
-  const activeProfile = useMemo(() => 
-    profiles.find(p => p.id === activeProfileId) || profiles[0], 
-  [profiles, activeProfileId]);
+  const activeProfile = useMemo(() => profiles.find(p => p.id === activeId) || profiles[0], [profiles, activeId]);
 
   useEffect(() => {
-    localStorage.setItem('icore_profiles_v2', JSON.stringify(profiles));
-    localStorage.setItem('icore_active_profile_id_v2', activeProfileId);
-  }, [profiles, activeProfileId]);
+    localStorage.setItem('1m1m_profiles_v24', JSON.stringify(profiles));
+    localStorage.setItem('1m1m_active_id_v24', activeId);
+  }, [profiles, activeId]);
 
   const updateActiveProfile = (updates: Partial<Profile>) => {
-    setProfiles(prev => prev.map(p => p.id === activeProfileId ? { ...p, ...updates } : p));
+    setProfiles(prev => prev.map(p => p.id === activeId ? { ...p, ...updates } : p));
   };
 
   const updateMapping = (btn: ControllerButton, updates: Partial<Mapping>) => {
     setProfiles(prev => prev.map(p => {
-      if (p.id !== activeProfileId) return p;
+      if (p.id !== activeId) return p;
       const existing = p.mappings.find(m => m.button === btn);
-      const newMappings = existing 
+      const nextMappings = existing 
         ? p.mappings.map(m => m.button === btn ? { ...m, ...updates } : m)
-        : [...p.mappings, { button: btn, mappedTo: 'Unbound', type: 'KEYBOARD', ...updates } as Mapping];
-      return { ...p, mappings: newMappings };
+        : [...p.mappings, { button: btn, mappedTo: 'Unlinked', type: 'KEYBOARD', ...updates } as Mapping];
+      return { ...p, mappings: nextMappings };
     }));
   };
 
@@ -480,10 +395,10 @@ const App: React.FC = () => {
     <GamepadProvider activeProfile={activeProfile}>
       <AppShell 
         profiles={profiles} 
-        activeProfile={activeProfile}
-        setActiveProfileId={setActiveProfileId}
-        updateActiveProfile={updateActiveProfile}
-        updateMapping={updateMapping}
+        activeProfile={activeProfile} 
+        setActiveProfileId={setActiveId} 
+        updateActiveProfile={updateActiveProfile} 
+        updateMapping={updateMapping} 
       />
     </GamepadProvider>
   );

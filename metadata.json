@@ -1,7 +1,9 @@
 {
-  "name": "iCore DualMap Desktop",
-  "description": "Standalone performance mapping engine for Sony DualSense controllers.",
-  "requestFramePermissions": [],
+  "name": "1Man1Machine by KillBIll2",
+  "description": "Standalone performance mapping engine for Sony DualSense controllers with YOLOv8n AI target detection.",
+  "requestFramePermissions": [
+    "camera"
+  ],
   "usb": true,
   "hid": true,
   "shortcuts": true

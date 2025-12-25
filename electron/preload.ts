@@ -37,6 +37,26 @@ const icoreBridge = {
       const randomLog = logs[Math.floor(Math.random() * logs.length)];
       callback(`${new Date().toLocaleTimeString()} ${randomLog}`);
     }, 8000);
+  },
+
+  // Game Process Detection Simulation
+  onGameDetected: (callback: (processName: string | null) => void) => {
+    const processes = [
+      'ModernWarfare.exe',
+      'eldenring.exe',
+      'chrome.exe',
+      'steam.exe',
+      null // Represents desktop/no game
+    ];
+    
+    setInterval(() => {
+      // Simulate erratic process switching for testing
+      if (Math.random() > 0.7) {
+        const proc = processes[Math.floor(Math.random() * processes.length)];
+        console.log(`[IPC] Native: Process change detected -> ${proc || 'None'}`);
+        callback(proc);
+      }
+    }, 15000);
   }
 };
 

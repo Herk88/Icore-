@@ -15,7 +15,14 @@ export type SystemAction =
 export interface MacroStep {
   id: string;
   key: string;
-  delay: number; // ms
+  delay: number;
+}
+
+// Added RadialItem interface to support Radial Menu components
+export interface RadialItem {
+  id: string;
+  label: string;
+  icon: 'Sword' | 'Shield' | 'Zap' | 'Mouse';
 }
 
 export interface Mapping {
@@ -26,10 +33,11 @@ export interface Mapping {
   macroSteps?: MacroStep[];
   isToggle?: boolean;
   isTurbo?: boolean;
-  turboSpeed?: number; // clicks per second
-  threshold?: number; // For triggers L2/R2 (0.0 to 1.0)
-  layer?: number; // Mapping only active in specific layer
-  isSticky?: boolean; // For accessibility
+  turboSpeed?: number;
+  burstMode?: boolean;
+  burstCount?: number;
+  threshold?: number;
+  isSticky?: boolean;
 }
 
 export interface AxisMapping {
@@ -39,17 +47,6 @@ export interface AxisMapping {
   deadzone: number;
   deadzoneType: 'CIRCULAR' | 'SQUARE' | 'CROSS' | 'AXIAL';
   curve: 'LINEAR' | 'EXPONENTIAL' | 'S_CURVE' | 'INSTANT' | 'CUSTOM';
-  curvePoints?: { x: number, y: number }[];
-  flickThreshold?: number;
-  smoothing?: number;
-  smoothingAlgorithm?: 'None' | 'Moving Average' | 'Exponential' | 'Kalman Filter';
-}
-
-export interface RadialItem {
-  id: string;
-  label: string;
-  action: string;
-  icon: string;
 }
 
 export interface AccessibilitySettings {
@@ -58,19 +55,34 @@ export interface AccessibilitySettings {
   aimSlowdownEnabled: boolean;
   stabilizationMode: 'Off' | 'Light' | 'Medium' | 'Heavy' | 'Custom';
   quickReleaseCombo: boolean;
-  stickyDurationLimit: number; // 0 = unlimited, otherwise seconds
-  globalTurboRate: number; // presses per second
+  stickyDurationLimit: number;
+  globalTurboRate: number;
   burstMode: boolean;
-  burstCount: number; // if burst mode enabled
+  burstCount: number;
   highContrastEnabled: boolean;
   indicatorSize: 'small' | 'medium' | 'large';
   audioFeedbackEnabled: boolean;
   audioFeedbackVolume: number;
-  soundPack: 'Click' | 'Beep' | 'Mechanical' | 'Silent';
+  soundPack: string;
   hapticFeedbackEnabled: boolean;
   hapticIntensity: number;
-  hapticPattern: 'Single Pulse' | 'Double Pulse' | 'Wave' | 'Custom';
-  oneHandedShiftButton: ControllerButton; // Button used to swap primary/secondary sides
+  hapticPattern: string;
+  antiRecoilEnabled: boolean;
+  antiRecoilStrength: number; 
+  autoAimEnabled: boolean;
+  autoAimStrength: number;
+  autoAimTargetSpeed: number;
+  rapidFireEnabled: boolean;
+  combatHudEnabled: boolean;
+  yoloEnabled: boolean;
+  trainingAutoCapture: boolean;
+  yoloConfidence: number;
+  yoloTrackingPower: number; 
+  gyroSmoothing: number;
+  gyroInvertX: boolean;
+  gyroInvertY: boolean;
+  gyroActivationButton: ControllerButton | 'ALWAYS';
+  oneHandedShiftButton: ControllerButton;
 }
 
 export interface Profile {
@@ -78,8 +90,10 @@ export interface Profile {
   name: string;
   description?: string;
   category?: 'User' | 'Default' | 'Accessibility' | 'Game-Specific';
+  targetProcess?: string;
   mappings: Mapping[];
   axisMappings: AxisMapping[];
+  // Updated from any[] to RadialItem[]
   radialItems: RadialItem[];
   created: number;
   gyroEnabled: boolean;
@@ -96,19 +110,16 @@ export interface GamepadState {
   id: string | null;
   buttons: Record<number, boolean>;
   axes: number[];
+  rawAxes: number[];
   heatmap: Record<string, number>;
-  sessionStartTime: number;
+  sessionStartTime: Date;
   totalInputs: number;
-  lastInputTime: number;
-  isThrottled: boolean;
-  activeLayer: number;
   turboTicks: Record<string, number>;
-  gyroActive: boolean;
   stickyStates: Record<string, boolean>;
   toggleStates: Record<string, boolean>;
-  oneHandedShiftActive: boolean; // Tracks if the user is holding the one-handed swap button
+  captureTriggered: boolean;
+  aiDetectedTarget: { x: number, y: number } | null;
   motion?: {
     gyro: { x: number, y: number, z: number };
-    accel: { x: number, y: number, z: number };
   };
 }
