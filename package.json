@@ -1,9 +1,9 @@
 
 {
-  "name": "icore-desktop",
-  "productName": "iCore DualMap",
-  "version": "2.4.0",
-  "description": "High-performance standalone DualSense mapping engine.",
+  "name": "1man1machine-desktop",
+  "productName": "1Man1Machine by killBill2",
+  "version": "3.2.0",
+  "description": "High-performance standalone DualSense mapping engine by killBill2 with Neural Interceptor logic.",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
@@ -41,8 +41,8 @@
     "autoprefixer": "^10.4.17"
   },
   "build": {
-    "appId": "com.gen2viral.icore",
-    "productName": "iCore DualMap",
+    "appId": "com.m1m.neural",
+    "productName": "1Man1Machine by killBill2",
     "files": [
       "dist/**/*",
       "electron/**/*",

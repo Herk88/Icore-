@@ -1,3 +1,4 @@
+
 /* 
   Tailwind directives removed here because styling is now handled 
   by the Tailwind Play CDN in index.html for maximum compatibility 
@@ -5,12 +6,12 @@
 */
 
 :root {
-  --icore-blue: #3b82f6;
-  --icore-dark: #050505;
+  --m1m-blue: #3b82f6;
+  --m1m-dark: #050505;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--icore-dark);
+  background-color: var(--m1m-dark);
 }

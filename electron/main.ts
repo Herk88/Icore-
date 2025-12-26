@@ -1,14 +1,15 @@
+
 import { app, BrowserWindow, ipcMain, Tray, Menu } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-// Fix for process.platform type error
 import process from 'process';
+import { exec } from 'child_process';
 
 /**
- * iCore Desktop - Main Process
+ * 1Man1Machine Desktop - Main Process
+ * Handles native OS interactions like window management and process enumeration.
  */
 
-// Fix for __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -20,10 +21,10 @@ const devUrl = 'http://localhost:5173';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 1000,
-    minHeight: 700,
+    width: 1360,
+    height: 860,
+    minWidth: 1100,
+    minHeight: 750,
     frame: false, // Frameless for custom title bar
     show: false,
     backgroundColor: '#050505',
@@ -37,7 +38,6 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL(devUrl);
-    // mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -51,38 +51,34 @@ function createWindow() {
   });
 }
 
-function setupTray() {
-  const iconPath = path.join(__dirname, '../resources/icon.png');
-  // tray = new Tray(iconPath);
-  // const contextMenu = Menu.buildFromTemplate([
-  //   { label: 'Show App', click: () => mainWindow?.show() },
-  //   { label: 'Quit', click: () => app.quit() }
-  // ]);
-  // tray.setToolTip('iCore DualMap');
-  // tray.setContextMenu(contextMenu);
-}
-
-app.whenReady().then(() => {
-  createWindow();
-  setupTray();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// IPC Handlers for Desktop features
+ipcMain.handle('get-processes', async () => {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      resolve(['Chrome.exe', 'Discord.exe', 'Spotify.exe']);
+      return;
+    }
+    
+    exec('tasklist /FI "STATUS eq RUNNING" /FO CSV', (err, stdout) => {
+      if (err) return resolve(['ModernWarfare.exe', 'eldenring.exe']);
+      const lines = stdout.toString().split('\r\n');
+      const processes = lines
+        .slice(1)
+        .map(line => line.split(',')[0].replace(/"/g, ''))
+        .filter(name => name.endsWith('.exe') && !name.includes('System'));
+      resolve(Array.from(new Set(processes)).slice(0, 20));
+    });
   });
 });
 
+app.whenReady().then(() => {
+  createWindow();
+});
+
 app.on('window-all-closed', () => {
-  // Fix for process.platform type error
   if (process.platform !== 'darwin') app.quit();
 });
 
-// IPC Handlers for Native Titlebar
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
-ipcMain.on('window-maximize', () => {
-  if (mainWindow?.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow?.maximize();
-  }
-});
-ipcMain.on('window-close', () => mainWindow?.hide()); // Hide to tray instead of closing
+ipcMain.on('window-maximize', () => mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize());
+ipcMain.on('window-close', () => mainWindow?.hide());

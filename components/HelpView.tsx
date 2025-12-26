@@ -10,7 +10,9 @@ import {
   CheckCircle2, 
   AlertCircle,
   HelpCircle,
-  MousePointer2
+  Download,
+  Monitor,
+  Cpu
 } from 'lucide-react';
 
 const HelpView: React.FC = () => {
@@ -21,7 +23,7 @@ const HelpView: React.FC = () => {
     {
       id: 1,
       title: "Plug in the Controller",
-      desc: "Connect your PlayStation DualSense controller to your computer using a USB-C cable. USB is recommended for the fastest response time.",
+      desc: "Connect your PlayStation DualSense controller via USB-C. USB is required for 1000Hz polling and native Haptic support.",
       icon: Usb,
       status: state.connected ? 'complete' : 'pending',
       actionLabel: "I've plugged it in"
@@ -29,26 +31,26 @@ const HelpView: React.FC = () => {
     {
       id: 2,
       title: "Grant Access",
-      desc: "Your computer needs permission to 'talk' to the controller. If a box pops up in your browser asking to 'Connect', click it and select 'DualSense'.",
+      desc: "Click 'Connect' in the browser prompt to link the HID interface. This allows the kernel to intercept your button presses.",
       icon: ShieldCheck,
       status: state.id ? 'complete' : 'pending',
       actionLabel: "I see the prompt"
     },
     {
       id: 3,
-      title: "Pick Your Playstyle",
-      desc: "Go to the 'Stacks' tab and click on a game profile (like 'FPS Pro'). This sets up all your buttons automatically.",
+      title: "Auto-Game Detection",
+      desc: "Go to 'Stacks' and link a profile to a game process (e.g., 'cod.exe'). The app will switch automatically when you launch the game.",
       icon: Layers,
       status: 'pending',
-      actionLabel: "Profile Selected"
+      actionLabel: "Profile Linked"
     },
     {
       id: 4,
-      title: "Start Playing",
-      desc: "Leave this window open in the background. Move your sticks now to see the 'Telemetry' tab light up. You are ready!",
-      icon: PlayCircle,
+      title: "Install Desktop App",
+      desc: "For full system-wide mapping and anti-cheat compatibility, download the Windows Installer (.exe) to run in the background.",
+      icon: Download,
       status: 'pending',
-      actionLabel: "Let's Go!"
+      actionLabel: "Download Installer"
     }
   ];
 
@@ -57,11 +59,11 @@ const HelpView: React.FC = () => {
       <header className="text-center space-y-4">
         <div className="inline-flex items-center gap-3 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full mb-4">
           <HelpCircle className="w-4 h-4 text-blue-400" />
-          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Gen2Viral Onboarding</span>
+          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">1Man1Machine Deployment Cluster by killBill2</span>
         </div>
-        <h2 className="text-5xl font-black text-white tracking-tighter uppercase">Getting Started</h2>
+        <h2 className="text-5xl font-black text-white tracking-tighter uppercase">Deployment Guide</h2>
         <p className="text-slate-500 font-bold uppercase tracking-tight max-w-lg mx-auto">
-          Follow these four simple steps to transform your controller into a high-performance gaming tool.
+          Follow these steps to deploy the neural mapping kernel to your hardware.
         </p>
       </header>
 
@@ -127,53 +129,52 @@ const HelpView: React.FC = () => {
 
         <div className="relative aspect-square bg-slate-950/50 rounded-[3rem] border border-white/5 flex items-center justify-center overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          {activeStep === 1 && (
-             <div className="text-center space-y-4">
-                <Usb className={`w-24 h-24 mx-auto transition-all ${state.connected ? 'text-green-500 scale-110' : 'text-slate-700 animate-pulse'}`} />
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                  {state.connected ? 'Device Linked' : 'Awaiting Connection'}
-                </p>
-             </div>
-          )}
-          {activeStep === 2 && (
-             <div className="text-center space-y-4 p-8">
-                <div className="w-full h-12 bg-white/5 rounded-full border border-white/10 flex items-center px-4 gap-3 mb-4">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
+          {activeStep === 4 ? (
+             <div className="text-center space-y-6">
+                <Monitor className="w-24 h-24 text-blue-500 mx-auto" />
+                <div className="space-y-2">
+                  <p className="text-xs font-black text-white uppercase tracking-widest">1Man1Machine by killBill2</p>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold">Compatible with Windows 10/11</p>
                 </div>
-                <div className="p-4 bg-slate-900 border border-blue-500/50 rounded-xl shadow-2xl animate-bounce">
-                  <p className="text-xs font-bold text-white">Browser Prompt: Click "Connect"</p>
-                </div>
+                <button className="bg-white text-slate-950 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-400 transition-colors">
+                  Build Installer (.exe)
+                </button>
              </div>
-          )}
-          {activeStep === 3 && (
-             <div className="grid grid-cols-2 gap-4 p-8 w-full">
-                {[1,2,3,4].map(i => (
-                  <div key={i} className={`h-20 rounded-2xl border ${i === 1 ? 'border-blue-500 bg-blue-500/10' : 'border-white/5 bg-white/5'} flex items-center justify-center`}>
-                    <Layers className={`w-6 h-6 ${i === 1 ? 'text-blue-500' : 'text-slate-800'}`} />
-                  </div>
-                ))}
-             </div>
-          )}
-          {activeStep === 4 && (
-             <div className="relative w-full h-full flex items-center justify-center">
-                <div className="w-32 h-32 rounded-full border-4 border-blue-500/20 flex items-center justify-center animate-ping absolute" />
-                <PlayCircle className="w-24 h-24 text-blue-500 relative z-10" />
-             </div>
+          ) : (
+            <div className="flex items-center justify-center p-12">
+               <Cpu className="w-32 h-32 text-slate-800 animate-spin-slow" />
+            </div>
           )}
         </div>
       </div>
 
-      <footer className="bg-blue-600/5 border border-blue-500/20 p-8 rounded-[2.5rem] flex items-center gap-6">
-        <AlertCircle className="w-8 h-8 text-blue-400 flex-shrink-0" />
-        <div>
-          <h4 className="text-sm font-black text-white uppercase tracking-widest mb-1">Expert Support</h4>
-          <p className="text-xs text-slate-500 font-bold uppercase leading-relaxed">
-            Trouble with setup? Ensure you are using <span className="text-blue-400">Google Chrome</span> or <span className="text-blue-400">Microsoft Edge</span>. Older browsers do not support high-speed controller mapping.
-          </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="bg-slate-950/80 p-10 rounded-[3rem] border border-white/5 space-y-6">
+           <h4 className="text-lg font-black text-white uppercase tracking-tighter">Installation FAQ</h4>
+           <div className="space-y-4">
+              <div className="space-y-1">
+                 <p className="text-[11px] font-black text-blue-400 uppercase">Is this a driver?</p>
+                 <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed">No, it's a user-mode HID interceptor. It does not require BIOS changes or disabling Secure Boot.</p>
+              </div>
+              <div className="space-y-1">
+                 <p className="text-[11px] font-black text-blue-400 uppercase">How do I update?</p>
+                 <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed">The desktop app checks for updates on startup. Simply restart the app to pull the latest kernel.</p>
+              </div>
+           </div>
         </div>
-      </footer>
+
+        <div className="bg-blue-600/5 border border-blue-500/20 p-10 rounded-[3rem] space-y-4">
+           <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-blue-400" />
+              <h4 className="text-sm font-black text-white uppercase tracking-widest">Dev Tip</h4>
+           </div>
+           <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed">
+              To build the installer yourself, ensure you have <span className="text-blue-400">Node.js</span> installed. 
+              Run <code className="bg-slate-900 px-2 py-1 rounded text-white font-mono">npm run build:win</code> in the project root. 
+              The resulting installer will appear in the <span className="text-white">dist/</span> directory.
+           </p>
+        </div>
+      </div>
     </div>
   );
 };

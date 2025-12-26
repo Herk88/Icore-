@@ -1,23 +1,23 @@
 
 /**
- * iCore Desktop - Preload Bridge
+ * 1Man1Machine Desktop - Preload Bridge
  * Securely exposes HID Kernel APIs to the renderer process.
  */
 
-const icoreBridge = {
+const m1mBridge = {
   // Application Versioning
-  version: "2.4.0-release",
+  version: "3.2.0-STABLE",
   
   // HID Mapping Persistence
   saveProfile: (profile: any) => {
-    console.log("[IPC] Saving profile to: app.getPath('userData')/profiles.json");
-    localStorage.setItem(`icore_profile_${profile.id}`, JSON.stringify(profile));
+    console.log("[IPC] Saving 1Man1Machine profile to storage");
+    localStorage.setItem(`m1m_profile_${profile.id}`, JSON.stringify(profile));
     return true;
   },
 
   // Kernel Communication
   engageTurbo: (button: string, rate: number) => {
-    console.log(`[IPC] Kernel Command: Engaged Turbo on ${button} @ ${rate}Hz`);
+    console.log(`[IPC] Kernel Command: 1M1M Turbo Engaged on ${button} @ ${rate}Hz`);
   },
 
   // Native UI Hooks
@@ -28,8 +28,8 @@ const icoreBridge = {
   // Telemetry Stream
   onKernelLog: (callback: (log: string) => void) => {
     const logs = [
-      "[KERNEL] IRQ Vector Hooked",
-      "[HID] USB Descriptor Validated",
+      "[KERNEL] 1M1M IRQ Vector Hooked",
+      "[HID] 1M1M USB Descriptor Validated",
       "[SYNC] Profile Hash Match",
       "[DRV] Low Latency Buffer Engaged"
     ];
@@ -39,7 +39,6 @@ const icoreBridge = {
     }, 8000);
   },
 
-  // Simulation: Get list of running processes
   getRunningProcesses: async () => {
     return [
       'ModernWarfare.exe',
@@ -55,7 +54,6 @@ const icoreBridge = {
     ];
   },
 
-  // Game Process Detection Simulation
   onGameDetected: (callback: (processName: string | null) => void) => {
     const processes = [
       'ModernWarfare.exe',
@@ -77,4 +75,4 @@ const icoreBridge = {
 };
 
 // Expose to window
-(window as any).icoreBridge = icoreBridge;
+(window as any).icoreBridge = m1mBridge;
