@@ -59,7 +59,7 @@ const HelpView: React.FC = () => {
       <header className="text-center space-y-4">
         <div className="inline-flex items-center gap-3 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-full mb-4">
           <HelpCircle className="w-4 h-4 text-blue-400" />
-          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">1Man1Machine Deployment Cluster by killBill2</span>
+          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">1Man1Machine Deployment Cluster by Hernan H</span>
         </div>
         <h2 className="text-5xl font-black text-white tracking-tighter uppercase">Deployment Guide</h2>
         <p className="text-slate-500 font-bold uppercase tracking-tight max-w-lg mx-auto">
@@ -133,7 +133,7 @@ const HelpView: React.FC = () => {
              <div className="text-center space-y-6">
                 <Monitor className="w-24 h-24 text-blue-500 mx-auto" />
                 <div className="space-y-2">
-                  <p className="text-xs font-black text-white uppercase tracking-widest">1Man1Machine by killBill2</p>
+                  <p className="text-xs font-black text-white uppercase tracking-widest">1Man1Machine by Hernan H</p>
                   <p className="text-[10px] text-slate-500 uppercase font-bold">Compatible with Windows 10/11</p>
                 </div>
                 <button className="bg-white text-slate-950 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-400 transition-colors">

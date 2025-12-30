@@ -18,7 +18,6 @@ export interface MacroStep {
   delay: number;
 }
 
-// Added RadialItem interface to support Radial Menu components
 export interface RadialItem {
   id: string;
   label: string;
@@ -27,8 +26,10 @@ export interface RadialItem {
 
 export interface Mapping {
   button: ControllerButton;
-  mappedTo: string;
+  mappedTo: string; // The Key Label (e.g. "Space", "W")
+  keyCode: string;  // The actual event code (e.g. "KeyW", "Space")
   type: 'KEYBOARD' | 'MOUSE' | 'MACRO' | 'RADIAL_MENU' | 'SYSTEM_ACTION';
+  mouseButton?: 0 | 1 | 2; // Left, Middle, Right
   systemAction?: SystemAction;
   macroSteps?: MacroStep[];
   isToggle?: boolean;
@@ -42,7 +43,7 @@ export interface Mapping {
 
 export interface AxisMapping {
   axis: ControllerAxis;
-  mappedTo: 'WASD' | 'MOUSE_MOVEMENT' | 'SCROLL' | 'FLICK_STICK' | 'GYRO_MOUSE';
+  mappedTo: 'WASD' | 'MOUSE_MOVEMENT' | 'SCROLL' | 'FLICK_STICK' | 'GYRO_MOUSE' | 'NONE';
   sensitivity: number;
   deadzone: number;
   deadzoneType: 'CIRCULAR' | 'SQUARE' | 'CROSS' | 'AXIAL';
@@ -74,6 +75,7 @@ export interface AccessibilitySettings {
   autoAimTargetSpeed: number;
   rapidFireEnabled: boolean;
   combatHudEnabled: boolean;
+  visualIndicatorsEnabled: boolean; 
   yoloEnabled: boolean;
   trainingAutoCapture: boolean;
   yoloConfidence: number;
@@ -83,6 +85,10 @@ export interface AccessibilitySettings {
   gyroInvertY: boolean;
   gyroActivationButton: ControllerButton | 'ALWAYS';
   oneHandedShiftButton: ControllerButton;
+  hudScale: number;
+  hudOpacity: number;
+  hudPosition: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  hudVisible: boolean;
 }
 
 export interface Profile {
@@ -93,7 +99,6 @@ export interface Profile {
   targetProcess?: string;
   mappings: Mapping[];
   axisMappings: AxisMapping[];
-  // Updated from any[] to RadialItem[]
   radialItems: RadialItem[];
   created: number;
   gyroEnabled: boolean;
@@ -119,7 +124,22 @@ export interface GamepadState {
   toggleStates: Record<string, boolean>;
   captureTriggered: boolean;
   aiDetectedTarget: { x: number, y: number } | null;
+  virtualKeys: Set<string>; // Keys currently "pressed" by the controller
+  mousePosition: { x: number, y: number };
   motion?: {
     gyro: { x: number, y: number, z: number };
   };
+}
+
+// Added SecurityEvent interface used in SecurityInterceptor.tsx
+export interface SecurityEvent {
+  timestamp: string;
+  device: string;
+  sourceIp: string;
+  destination: string;
+  destIp: string;
+  protocol: string;
+  size: string;
+  info: string;
+  suspicious: boolean;
 }

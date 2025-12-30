@@ -27,14 +27,19 @@ const defaultAccessibility: AccessibilitySettings = {
   autoAimTargetSpeed: 5,
   rapidFireEnabled: false,
   combatHudEnabled: true,
+  visualIndicatorsEnabled: true,
   yoloEnabled: false,
   trainingAutoCapture: false,
   yoloConfidence: 0.75,
-  yoloTrackingPower: 35, // Default tracking strength
+  yoloTrackingPower: 35,
   gyroSmoothing: 20,
   gyroInvertX: false,
   gyroInvertY: false,
   gyroActivationButton: 'L2',
+  hudScale: 100,
+  hudOpacity: 90,
+  hudPosition: 'bottom-right',
+  hudVisible: true,
 };
 
 export const DEFAULT_PROFILES: Profile[] = [
@@ -60,12 +65,13 @@ export const DEFAULT_PROFILES: Profile[] = [
       trainingAutoCapture: true,
       yoloTrackingPower: 50
     },
+    // Added missing keyCode properties for all mappings
     mappings: [
-      { button: 'CIRCLE', mappedTo: 'Slide/Crouch', type: 'KEYBOARD', isTurbo: true, turboSpeed: 15 },
-      { button: 'SQUARE', mappedTo: 'Reload', type: 'KEYBOARD' },
-      { button: 'CROSS', mappedTo: 'Jump', type: 'KEYBOARD' },
-      { button: 'L2', mappedTo: 'ADS', type: 'MOUSE', threshold: 0.1 },
-      { button: 'R2', mappedTo: 'FIRE', type: 'MOUSE', threshold: 0.1 },
+      { button: 'CIRCLE', mappedTo: 'Slide/Crouch', keyCode: 'KeyC', type: 'KEYBOARD', isTurbo: true, turboSpeed: 15 },
+      { button: 'SQUARE', mappedTo: 'Reload', keyCode: 'KeyR', type: 'KEYBOARD' },
+      { button: 'CROSS', mappedTo: 'Jump', keyCode: 'Space', type: 'KEYBOARD' },
+      { button: 'L2', mappedTo: 'ADS', keyCode: '', type: 'MOUSE', threshold: 0.1, mouseButton: 2 },
+      { button: 'R2', mappedTo: 'FIRE', keyCode: '', type: 'MOUSE', threshold: 0.1, mouseButton: 0 },
     ],
     axisMappings: [
       { axis: 'RIGHT_STICK_X', mappedTo: 'MOUSE_MOVEMENT', sensitivity: 45, deadzone: 0.05, deadzoneType: 'CIRCULAR', curve: 'EXPONENTIAL' },
@@ -90,10 +96,11 @@ export const DEFAULT_PROFILES: Profile[] = [
       aimStabilizationStrength: 45,
       stabilizationMode: 'Medium'
     },
+    // Added missing keyCode properties for all mappings
     mappings: [
-      { button: 'L3', mappedTo: 'Lean Left', type: 'KEYBOARD', isSticky: true },
-      { button: 'R3', mappedTo: 'Lean Right', type: 'KEYBOARD', isSticky: true },
-      { button: 'CIRCLE', mappedTo: 'Crouch', type: 'KEYBOARD' },
+      { button: 'L3', mappedTo: 'Lean Left', keyCode: 'KeyQ', type: 'KEYBOARD', isSticky: true },
+      { button: 'R3', mappedTo: 'Lean Right', keyCode: 'KeyE', type: 'KEYBOARD', isSticky: true },
+      { button: 'CIRCLE', mappedTo: 'Crouch', keyCode: 'KeyC', type: 'KEYBOARD' },
     ],
     axisMappings: [],
     radialItems: [],
@@ -116,10 +123,11 @@ export const DEFAULT_PROFILES: Profile[] = [
       rapidFireEnabled: true,
       globalTurboRate: 20
     },
+    // Added missing keyCode properties for all mappings
     mappings: [
-      { button: 'R2', mappedTo: 'Build/Fire', type: 'MOUSE', isTurbo: true, turboSpeed: 20 },
-      { button: 'TRIANGLE', mappedTo: 'Pickaxe', type: 'KEYBOARD' },
-      { button: 'TOUCHPAD', mappedTo: 'Edit', type: 'KEYBOARD' },
+      { button: 'R2', mappedTo: 'Build/Fire', keyCode: '', type: 'MOUSE', isTurbo: true, turboSpeed: 20, mouseButton: 0 },
+      { button: 'TRIANGLE', mappedTo: 'Pickaxe', keyCode: 'KeyF', type: 'KEYBOARD' },
+      { button: 'TOUCHPAD', mappedTo: 'Edit', keyCode: 'KeyG', type: 'KEYBOARD' },
     ],
     axisMappings: [],
     radialItems: [],
@@ -137,9 +145,10 @@ export const DEFAULT_PROFILES: Profile[] = [
     virtualOutput: 'KB_MOUSE',
     pollingRate: 500,
     accessibility: { ...defaultAccessibility, oneHandedShiftButton: 'L3' },
+    // Added missing keyCode properties for all mappings
     mappings: [
-      { button: 'L2', mappedTo: 'Right Click', type: 'MOUSE', isSticky: true },
-      { button: 'L1', mappedTo: 'Shift', type: 'KEYBOARD' },
+      { button: 'L2', mappedTo: 'Right Click', keyCode: '', type: 'MOUSE', isSticky: true, mouseButton: 2 },
+      { button: 'L1', mappedTo: 'Shift', keyCode: 'ShiftLeft', type: 'KEYBOARD' },
     ],
     axisMappings: [],
     radialItems: [],

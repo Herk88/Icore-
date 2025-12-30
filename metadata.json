@@ -1,6 +1,6 @@
 {
-  "name": "1Man1Machine by killBill2",
-  "description": "The definitive Neural Performance Suite by killBill2. High-performance standalone mapping engine for Sony DualSense controllers with YOLOv8n AI target detection.",
+  "name": "1Man1Machine by Hernan H",
+  "description": "The definitive Neural Performance Suite by Hernan H. High-performance standalone mapping engine for Sony DualSense controllers with YOLOv8n AI target detection.",
   "requestFramePermissions": [
     "camera"
   ],

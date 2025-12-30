@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { GamepadState, Profile, Mapping, ControllerButton } from '../types';
 import { DUALSENSE_INDICES } from '../constants';
@@ -7,11 +8,14 @@ interface GamepadContextType {
   resetStats: () => void;
   resetStickyStates: () => void;
   setAiTarget: (target: { x: number, y: number } | null) => void;
+  isKernelActive: boolean;
+  setKernelActive: (active: boolean) => void;
 }
 
 const GamepadContext = createContext<GamepadContextType | undefined>(undefined);
 
 export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfile: Profile }> = ({ children, activeProfile }) => {
+  const [isKernelActive, setKernelActive] = useState(true);
   const [state, setState] = useState<GamepadState>({
     connected: false,
     id: null,
@@ -26,148 +30,159 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
     toggleStates: {},
     captureTriggered: false,
     aiDetectedTarget: null,
+    virtualKeys: new Set<string>(),
+    mousePosition: { x: 500, y: 500 },
   });
 
   const lastButtonsRef = useRef<Record<number, boolean>>({});
   const requestRef = useRef<number | undefined>(undefined);
   const profileRef = useRef(activeProfile);
   const aiTargetRef = useRef<{ x: number, y: number } | null>(null);
+  const virtualKeysRef = useRef<Set<string>>(new Set());
   
-  // High-performance State Refs
-  const currentAiPull = useRef({ x: 0, y: 0 });
-  const prevRightStickRef = useRef({ x: 0, y: 0 });
-  const snapFlareRef = useRef(0); 
-  const slowdownFactorRef = useRef(1.0);
+  // Mouse Accumulators
+  const mousePosRef = useRef({ x: 500, y: 500 });
+  const prevTimeRef = useRef(performance.now());
+  
+  // Stabilization Filters
+  const smoothedRightStickRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => { 
     profileRef.current = activeProfile; 
   }, [activeProfile]);
 
-  const triggerHaptic = (gamepad: Gamepad, intensity: number = 0.5, duration: number = 50) => {
-    const profile = profileRef.current;
-    if (profile.accessibility.hapticFeedbackEnabled && gamepad.vibrationActuator) {
-      const strength = (profile.accessibility.hapticIntensity / 100) * intensity;
-      (gamepad.vibrationActuator as any).playEffect('dual-rumble', {
-        startDelay: 0,
-        duration: duration,
-        weakMagnitude: strength,
-        strongMagnitude: strength,
-      }).catch(() => {});
-    }
+  const applyDeadzone = (value: number, deadzone: number) => {
+    const abs = Math.abs(value);
+    if (abs < deadzone) return 0;
+    return (value / abs) * ((abs - deadzone) / (1 - deadzone));
   };
 
   const updateGamepadState = () => {
+    if (!isKernelActive) {
+      requestRef.current = requestAnimationFrame(updateGamepadState);
+      return;
+    }
+
     const gp = navigator.getGamepads()[0];
     const profile = profileRef.current;
-    const acc = profile.accessibility;
+    const now = performance.now();
+    const deltaTime = (now - prevTimeRef.current) / 1000;
+    prevTimeRef.current = now;
 
-    if (gp) {
+    // Simulation Mode: If no hardware, allow AI to "move" the virtual mouse if targets exist
+    const isSimulatingHardware = !gp;
+
+    if (gp || (isSimulatingHardware && profile.accessibility.yoloEnabled)) {
       const rawButtons: Record<number, boolean> = {};
-      gp.buttons.forEach((btn, idx) => { rawButtons[idx] = btn.pressed; });
-
-      let translatedAxes = [...gp.axes];
-      const rawAxes = [...gp.axes];
-
-      // --- NEURAL MAGNET INJECTION (PRO LOGIC) ---
-      if (acc.yoloEnabled && aiTargetRef.current) {
-        const target = aiTargetRef.current;
-        const targetDX = target.x - 0.5;
-        const targetDY = target.y - 0.5;
-        
-        let pullStrength = (acc.yoloTrackingPower / 100) * 0.65; 
-        
-        // --- EXPONENTIAL SNAP LOGIC ---
-        if (acc.snapToTargetEnabled && snapFlareRef.current < 1.0) {
-          // Intense initial pull that decays exponentially (PRO-feel)
-          const snapMultiplier = 2.5 * Math.pow(0.92, snapFlareRef.current * 15);
-          pullStrength *= (1 + snapMultiplier);
-          snapFlareRef.current += 0.04; 
-        }
-        
-        const smoothing = 0.92 - (acc.yoloTrackingPower / 600);
-        currentAiPull.current.x = currentAiPull.current.x * smoothing + targetDX * (1 - smoothing);
-        currentAiPull.current.y = currentAiPull.current.y * smoothing + targetDY * (1 - smoothing);
-
-        translatedAxes[2] += currentAiPull.current.x * pullStrength;
-        translatedAxes[3] += currentAiPull.current.y * pullStrength;
-      } else {
-        currentAiPull.current.x *= 0.82;
-        currentAiPull.current.y *= 0.82;
-        snapFlareRef.current = 0; 
+      if (gp) {
+        gp.buttons.forEach((btn, idx) => { rawButtons[idx] = btn.pressed; });
       }
 
-      // --- SMOOTH AIM SLOWDOWN ---
-      if (acc.aimSlowdownEnabled && aiTargetRef.current) {
-        const dist = Math.sqrt(Math.pow(aiTargetRef.current.x - 0.5, 2) + Math.pow(aiTargetRef.current.y - 0.5, 2));
-        const targetSlowdown = dist < 0.22 ? 0.55 : 1.0;
-        // Interpolate slowdown for smoothness
-        slowdownFactorRef.current = slowdownFactorRef.current * 0.85 + targetSlowdown * 0.15;
-        
-        translatedAxes[2] *= slowdownFactorRef.current; 
-        translatedAxes[3] *= slowdownFactorRef.current;
-      } else {
-        slowdownFactorRef.current = slowdownFactorRef.current * 0.9 + 1.0 * 0.1;
-      }
+      // 1. Process Axes
+      const translatedAxes = gp ? gp.axes.map((val, idx) => {
+        const axisName = idx < 2 ? (idx === 0 ? 'LEFT_STICK_X' : 'LEFT_STICK_Y') : (idx === 2 ? 'RIGHT_STICK_X' : 'RIGHT_STICK_Y');
+        const config = profile.axisMappings.find(a => a.axis === axisName);
+        if (!config) return val;
+        return applyDeadzone(val, config.deadzone);
+      }) : [0, 0, 0, 0];
 
-      // --- DYNAMIC ANTI-RECOIL ---
-      if (acc.antiRecoilEnabled && rawButtons[7]) { // R2
-        const recoilVal = (acc.antiRecoilStrength / 100) * 0.32;
-        const jitter = (Math.random() - 0.5) * 0.012;
-        translatedAxes[3] += recoilVal + jitter;
-      }
-
-      // --- SIGNAL STABILIZATION MATRIX ---
-      if (acc.stabilizationMode !== 'Off') {
-        const modeMap = { 
-          'Light': 0.18, 
-          'Medium': 0.32, 
-          'Heavy': 0.52, 
-          'Custom': acc.aimStabilizationStrength / 100 
-        };
-        const factor = modeMap[acc.stabilizationMode] || 0;
-        
-        translatedAxes[2] = prevRightStickRef.current.x * factor + translatedAxes[2] * (1 - factor);
-        translatedAxes[3] = prevRightStickRef.current.y * factor + translatedAxes[3] * (1 - factor);
-      }
-
-      prevRightStickRef.current = { x: translatedAxes[2], y: translatedAxes[3] };
-      translatedAxes = translatedAxes.map(v => Math.max(-1, Math.min(1, v)));
+      // --- AIM STABILIZATION LOGIC ---
+      let rsX = translatedAxes[2];
+      let rsY = translatedAxes[3];
       
-      const newHeatmap = { ...state.heatmap };
+      const stabStrength = profile.accessibility.aimStabilizationStrength / 100;
+      if (profile.accessibility.stabilizationMode !== 'Off') {
+        let alpha = 0.3; 
+        if (profile.accessibility.stabilizationMode === 'Medium') alpha = 0.15;
+        if (profile.accessibility.stabilizationMode === 'Heavy') alpha = 0.05;
+        if (profile.accessibility.stabilizationMode === 'Custom') alpha = 1.0 - stabStrength;
+        
+        smoothedRightStickRef.current.x = smoothedRightStickRef.current.x * (1 - alpha) + rsX * alpha;
+        smoothedRightStickRef.current.y = smoothedRightStickRef.current.y * (1 - alpha) + rsY * alpha;
+        
+        rsX = smoothedRightStickRef.current.x;
+        rsY = smoothedRightStickRef.current.y;
+      }
+
+      const nextVirtualKeys = new Set<string>();
+
+      // 2. STICK TO MOUSE & AI PULL
+      const rightStickConfigX = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_X');
+      const rightStickConfigY = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_Y');
+
+      if (rightStickConfigX?.mappedTo === 'MOUSE_MOVEMENT' || rightStickConfigY?.mappedTo === 'MOUSE_MOVEMENT' || isSimulatingHardware) {
+        let velX = rsX * (rightStickConfigX?.sensitivity || 50) * 0.5;
+        let velY = rsY * (rightStickConfigY?.sensitivity || 50) * 0.5;
+
+        // --- AI TARGETING LOGIC ---
+        const target = aiTargetRef.current;
+        if (profile.accessibility.yoloEnabled && target) {
+          const targetRelX = (target.x - 0.5) * 2;
+          const targetRelY = (target.y - 0.5) * 2;
+          const distToTarget = Math.sqrt(targetRelX * targetRelX + targetRelY * targetRelY);
+
+          if (profile.accessibility.snapToTargetEnabled && distToTarget < 0.3 && (Math.abs(rsX) > 0.1 || Math.abs(rsY) > 0.1 || isSimulatingHardware)) {
+             velX += targetRelX * 25;
+             velY += targetRelY * 25;
+          }
+
+          if (profile.accessibility.aimSlowdownEnabled && distToTarget < 0.2 && !isSimulatingHardware) {
+             velX *= 0.4;
+             velY *= 0.4;
+          }
+
+          const pullPower = profile.accessibility.yoloTrackingPower / 100;
+          velX += targetRelX * pullPower * 12;
+          velY += targetRelY * pullPower * 12;
+        }
+
+        mousePosRef.current.x += velX * deltaTime * 100;
+        mousePosRef.current.y += velY * deltaTime * 100;
+      }
+
+      mousePosRef.current.x = Math.max(0, Math.min(1000, mousePosRef.current.x));
+      mousePosRef.current.y = Math.max(0, Math.min(1000, mousePosRef.current.y));
+
       const nextStickyStates = { ...state.stickyStates };
+      const nextHeatmap = { ...state.heatmap };
       let newTotalInputs = state.totalInputs;
 
       Object.keys(rawButtons).forEach((key) => {
         const idx = parseInt(key);
+        const btnName = DUALSENSE_INDICES[idx] as ControllerButton;
+        const mapping = profile.mappings.find(m => m.button === btnName);
+
         if (rawButtons[idx] && !lastButtonsRef.current[idx]) {
-          const btnName = DUALSENSE_INDICES[idx] as ControllerButton;
-          if (btnName) {
-            newTotalInputs++;
-            newHeatmap[btnName] = (newHeatmap[btnName] || 0) + 1;
-            const mapping = profile.mappings.find(m => m.button === btnName);
-            if (mapping?.isSticky) {
-              nextStickyStates[btnName] = !nextStickyStates[btnName];
-              triggerHaptic(gp, 0.45, 90);
-            }
-          }
+          newTotalInputs++;
+          if (btnName) nextHeatmap[btnName] = (nextHeatmap[btnName] || 0) + 1;
+          if (mapping?.isSticky) nextStickyStates[btnName] = !nextStickyStates[btnName];
+        }
+
+        const active = rawButtons[idx] || nextStickyStates[btnName];
+        if (active && mapping?.type === 'KEYBOARD' && mapping.keyCode) {
+          nextVirtualKeys.add(mapping.keyCode);
         }
       });
 
       lastButtonsRef.current = rawButtons;
+      virtualKeysRef.current = nextVirtualKeys;
+
       setState(prev => ({
         ...prev,
-        connected: true,
-        id: gp.id,
+        connected: gp ? true : false,
+        id: gp ? gp.id : (profile.accessibility.yoloEnabled ? 'NEURAL_SIMULATOR_ACTIVE' : null),
         buttons: rawButtons,
         axes: translatedAxes,
-        rawAxes: rawAxes,
-        heatmap: newHeatmap,
+        rawAxes: gp ? [...gp.axes] : [0, 0, 0, 0],
+        heatmap: nextHeatmap,
         totalInputs: newTotalInputs,
         stickyStates: nextStickyStates,
-        aiDetectedTarget: aiTargetRef.current,
+        virtualKeys: nextVirtualKeys,
+        mousePosition: { ...mousePosRef.current },
+        aiDetectedTarget: aiTargetRef.current
       }));
     } else {
-      setState(prev => prev.connected ? { ...prev, connected: false } : prev);
+      if (state.connected) setState(prev => ({ ...prev, connected: false }));
     }
     requestRef.current = requestAnimationFrame(updateGamepadState);
   };
@@ -175,18 +190,16 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   useEffect(() => {
     requestRef.current = requestAnimationFrame(updateGamepadState);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, []);
-
-  const resetStickyStates = () => {
-    setState(prev => ({ ...prev, stickyStates: {} }));
-  };
+  }, [isKernelActive]);
 
   return (
     <GamepadContext.Provider value={{ 
       state, 
       resetStats: () => setState(p => ({...p, totalInputs: 0, heatmap: {}})), 
-      resetStickyStates, 
-      setAiTarget: (t) => { aiTargetRef.current = t; } 
+      resetStickyStates: () => setState(p => ({...p, stickyStates: {}})),
+      setAiTarget: (t) => { aiTargetRef.current = t; },
+      isKernelActive,
+      setKernelActive
     }}>
       {children}
     </GamepadContext.Provider>
