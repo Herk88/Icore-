@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Profile, Mapping, ControllerButton } from '../types';
 import { Keyboard, MousePointer2, Edit3, Lock, Zap, RefreshCcw, LayoutGrid, MonitorDot, ListMusic, Layers, ChevronRight } from 'lucide-react';
@@ -20,15 +19,8 @@ const TYPE_CONFIG = {
 const MappingList: React.FC<MappingListProps> = ({ profile, onSelectButton }) => {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Active Hardware Stacks</h3>
-        <div className="flex items-center gap-3">
-           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,1)]" />
-           <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em]">{profile.mappings.length} Hooks Engaged</span>
-        </div>
-      </div>
       
-      <div className="grid grid-cols-1 gap-3 max-h-[450px] overflow-y-auto pr-3 custom-scrollbar">
+      <div className="grid grid-cols-1 gap-3 max-h-[450px] overflow-y-auto pr-3 custom-scrollbar" role="list">
         {profile.mappings.length === 0 ? (
           <div className="p-16 border border-dashed border-white/5 rounded-[2.5rem] text-center flex flex-col items-center gap-6 bg-slate-900/10">
             <div className="w-16 h-16 rounded-3xl bg-slate-800/40 flex items-center justify-center">
@@ -44,10 +36,11 @@ const MappingList: React.FC<MappingListProps> = ({ profile, onSelectButton }) =>
           const Icon = config.icon;
           
           return (
-            <div 
+            <button 
               key={`${m.button}-${idx}`} 
               onClick={() => onSelectButton?.(m.button)}
-              className="flex items-center justify-between p-5 bg-slate-950/40 rounded-3xl border border-white/5 hover:border-blue-500/40 transition-all group backdrop-blur-xl cursor-pointer hover:bg-slate-900/40 shadow-xl"
+              className="w-full flex items-center justify-between p-5 bg-slate-950/40 rounded-3xl border border-white/5 hover:border-blue-500/40 transition-all group backdrop-blur-xl cursor-pointer hover:bg-slate-900/40 shadow-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              aria-label={`Edit mapping for ${m.button}, currently mapped to ${m.mappedTo}`}
             >
               <div className="flex items-center gap-5">
                 <div className="w-16 h-16 flex flex-col items-center justify-center bg-slate-900 rounded-2xl text-[14px] font-black text-white border border-white/5 shadow-inner group-hover:text-blue-400 group-hover:border-blue-500/20 transition-all">
@@ -85,7 +78,7 @@ const MappingList: React.FC<MappingListProps> = ({ profile, onSelectButton }) =>
                   <ChevronRight className="w-5 h-5" />
                 </div>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>

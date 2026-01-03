@@ -1,14 +1,12 @@
 
-const CACHE_NAME = 'm1m-v3.2.0-cache';
+const CACHE_NAME = '1m1m-restored-v2';
 const ASSETS_TO_CACHE = [
   './index.html',
   './index.tsx',
   './App.tsx',
-  './types.ts',
-  './constants.ts',
   './manifest.json',
   'https://cdn.tailwindcss.com',
-  'https://esm.sh/@tensorflow/tfjs@^4.22.0'
+  'https://esm.sh/@google/genai@^1.34.0'
 ];
 
 self.addEventListener('install', (event) => {
@@ -26,6 +24,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -37,14 +36,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((response) => {
-      return response || fetch(event.request).catch(() => {
-        // Fallback for Gemini or other cloud APIs when offline
-        if (event.request.url.includes('generativelanguage.googleapis.com')) {
-          return new Response(JSON.stringify({ error: 'Offline' }), {
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      });
+      return response || fetch(event.request);
     })
   );
 });

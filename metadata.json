@@ -1,10 +1,11 @@
 {
-  "name": "1Man1Machine by Hernan H",
-  "description": "The definitive Neural Performance Suite by Hernan H. High-performance standalone mapping engine for Sony DualSense controllers with YOLOv8n AI target detection.",
+  "name": "1Man1Machine",
+  "description": "High-performance standalone DualSense mapping engine by Hernan H with Neural Interceptor logic.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "microphone"
   ],
-  "usb": true,
+  "usb": false,
   "hid": true,
   "shortcuts": true
 }

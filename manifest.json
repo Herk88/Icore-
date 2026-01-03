@@ -1,15 +1,15 @@
 
 {
-  "name": "1Man1Machine by Hernan H",
+  "name": "1Man1Machine",
   "short_name": "1M1M",
-  "description": "Neural Performance Suite for DualSense Controllers",
+  "description": "High-performance standalone DualSense mapping engine.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#050505",
   "theme_color": "#3b82f6",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/570/570223.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/11520/11520625.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

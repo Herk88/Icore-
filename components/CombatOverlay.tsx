@@ -2,26 +2,53 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle } from 'lucide-react';
+import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
+// Verified Mirrors for YOLOv8n Web Model
+const MODEL_MIRRORS = [
+  // Mirror 1: jsDelivr (CDN - High Speed)
+  'https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json',
+  // Mirror 2: GitHub Pages (High Availability)
+  'https://yqlbu.github.io/yolov8-tfjs-demo/model/yolov8n_web_model/model.json',
+  // Mirror 3: Raw GitHub (Fallback)
+  'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json'
+];
+
 export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
-  const { setAiTarget } = useGamepad();
+  const { setAiTarget, state } = useGamepad();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Offscreen canvas for fast pixel reading (Performance Optimization)
+  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const [model, setModel] = useState<tf.GraphModel | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Initializing Neural Core...');
+  const [needsDownload, setNeedsDownload] = useState(false);
   const [inferenceTime, setInferenceTime] = useState(0);
   const [fps, setFps] = useState(0);
   const [sourceMode, setSourceMode] = useState<'SCREEN' | 'CAMERA'>('SCREEN');
-  const [isSimulating, setIsSimulating] = useState(false);
   const [isModelCached, setIsModelCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Added initial value undefined to useRef to satisfy TypeScript requirements
+  const [activeMirrorIndex, setActiveMirrorIndex] = useState(0);
+  
+  // Capture System State
+  const [captureStats, setCaptureStats] = useState({ total: 0, lastReason: 'IDLE', storageUsage: 0 });
+  const lastCaptureTimeRef = useRef<number>(0);
+  const currentDetectionsRef = useRef<{ boxes: number[][], scores: number[], classes: number[] } | null>(null);
+
   const requestRef = useRef<number | undefined>(undefined);
   const lastInferenceRef = useRef<number>(0);
   
-  const simTargets = useRef<{x: number, y: number, vx: number, vy: number, label: string}[]>([]);
+  // Initialize offscreen canvas once
+  useEffect(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 50; // Low res for fast analysis
+    canvas.height = 50;
+    analysisCanvasRef.current = canvas;
+  }, []);
 
   const convertCenterToCorners = useCallback((boxes: tf.Tensor) => {
     return tf.tidy(() => {
@@ -34,9 +61,150 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     });
   }, []);
 
+  const calculateImageQualityFast = (sourceCanvas: HTMLCanvasElement): { brightness: number, sharpness: number } => {
+    const analysisCanvas = analysisCanvasRef.current;
+    if (!analysisCanvas) return { brightness: 0, sharpness: 0 };
+
+    const ctx = analysisCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return { brightness: 0, sharpness: 0 };
+
+    // Downsample for speed
+    ctx.drawImage(sourceCanvas, 0, 0, analysisCanvas.width, analysisCanvas.height);
+    
+    const imageData = ctx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+    const data = imageData.data;
+    const width = analysisCanvas.width;
+    const height = analysisCanvas.height;
+
+    let brightnessSum = 0;
+    const grayData = new Float32Array(width * height);
+
+    // Calculate Brightness & Grayscale in one pass
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i+1];
+      const b = data[i+2];
+      brightnessSum += (r + g + b) / 3;
+      grayData[i/4] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+    const avgBrightness = brightnessSum / (width * height);
+
+    // Laplacian Variance (Sharpness) on the small thumbnail
+    let mean = 0;
+    let variance = 0;
+    let count = 0;
+
+    // Convolve with 3x3 Laplacian kernel [[0,1,0],[1,-4,1],[0,1,0]]
+    // Skip borders
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+         const idx = y * width + x;
+         const laplacian = 
+           grayData[idx - width] +      // Top
+           grayData[idx - 1] +          // Left
+           (grayData[idx] * -4) +       // Center
+           grayData[idx + 1] +          // Right
+           grayData[idx + width];       // Bottom
+         
+         mean += laplacian;
+         variance += laplacian * laplacian;
+         count++;
+      }
+    }
+    
+    mean /= count;
+    variance = (variance / count) - (mean * mean);
+
+    return { brightness: avgBrightness, sharpness: variance };
+  };
+
+  const processSporadicCapture = async () => {
+    const config = profile.accessibility.trainingConfig;
+    if (!config.enabled || !currentDetectionsRef.current || !canvasRef.current) return;
+
+    const now = Date.now();
+    if (now - lastCaptureTimeRef.current < config.minInterval) return;
+
+    // 1. Evaluate Probability (Active Learning Logic)
+    const detections = currentDetectionsRef.current;
+    
+    // Filter for Persons (Class 0) only
+    const personIndices = detections.classes
+      .map((c, i) => c === 0 ? i : -1)
+      .filter(i => i !== -1);
+
+    if (personIndices.length === 0) {
+      setCaptureStats(prev => ({...prev, lastReason: 'SKIP: No targets'}));
+      return; 
+    }
+
+    const confidences = personIndices.map(i => detections.scores[i]);
+    const hasLowConfidence = confidences.some(c => c < config.confidenceThreshold);
+    const probability = hasLowConfidence ? config.probLowConfidence : config.probHighConfidence;
+
+    if (Math.random() > probability) {
+       setCaptureStats(prev => ({...prev, lastReason: `SKIP: RNG (${(probability * 100).toFixed(0)}%)`}));
+       return;
+    }
+
+    // 2. Image Quality Filters (Fast Path)
+    const quality = calculateImageQualityFast(canvasRef.current);
+    
+    if (quality.brightness < config.minBrightness) {
+      setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Dark'}));
+      return;
+    }
+    
+    // Sharpness check (Threshold adjusted for downsampled image, approx 50 is good for thumbnail)
+    if (quality.sharpness < (config.minSharpness * 0.5)) { 
+       setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Blurry'}));
+       return;
+    }
+
+    // 3. Prepare Data for Export
+    lastCaptureTimeRef.current = now;
+    const base64Image = canvasRef.current.toDataURL('image/jpeg', 0.9);
+    const inputSize = 640; // YOLOv8 Standard Input Size
+
+    // Format Labels for YOLO: <object-class> <x_center> <y_center> <width> <height>
+    // NOTE: TFJS boxes from our model are [cx, cy, w, h] in PIXELS (relative to 640x640 input)
+    // We must Normalize them to 0-1 range for the .txt file.
+    const labels = personIndices.map(i => {
+      const [cxRaw, cyRaw, wRaw, hRaw] = detections.boxes[i];
+      
+      const cx = cxRaw / inputSize;
+      const cy = cyRaw / inputSize;
+      const w = wRaw / inputSize;
+      const h = hRaw / inputSize;
+
+      // Clamp values to 0-1 to avoid training errors
+      return `0 ${Math.max(0, Math.min(1, cx)).toFixed(6)} ${Math.max(0, Math.min(1, cy)).toFixed(6)} ${Math.max(0, Math.min(1, w)).toFixed(6)} ${Math.max(0, Math.min(1, h)).toFixed(6)}`;
+    }).join('\n');
+
+    const filename = `capture_${now}`;
+    
+    // 4. Send to Electron Bridge
+    if (window.icoreBridge?.saveTrainingData) {
+      const result = await window.icoreBridge.saveTrainingData({
+        image: base64Image,
+        labels: labels,
+        filename: filename
+      });
+      
+      if (result.success) {
+        setCaptureStats(prev => ({
+          total: prev.total + 1,
+          lastReason: 'CAPTURED',
+          storageUsage: Math.min(100, (prev.total + 1) / 10)
+        }));
+      } else {
+        setCaptureStats(prev => ({...prev, lastReason: `ERR: ${result.reason}`}));
+      }
+    }
+  };
+
   const startStream = async (mode: 'SCREEN' | 'CAMERA') => {
     try {
-      setLoading(true);
       setError(null);
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
@@ -62,77 +230,116 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
         videoRef.current.play().catch(() => {});
       }
       setSourceMode(mode);
-      setIsSimulating(false);
-      setLoading(false);
     } catch (err) {
-      console.warn("[NEURAL] Local stream unavailable, activating simulation matrix.");
-      setIsSimulating(true);
+      console.error("[NEURAL] Stream failed:", err);
+      setError("STREAM_FAIL: Check Permissions or Device Connection");
       setLoading(false);
-      if (simTargets.current.length === 0) {
-        simTargets.current = [
-          { x: 0.35, y: 0.45, vx: 0.002, vy: 0.001, label: 'SIM_UNIT_01' },
-          { x: 0.65, y: 0.55, vx: -0.0015, vy: -0.002, label: 'SIM_UNIT_02' }
-        ];
-      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    const initModel = async () => {
-      await tf.ready();
-      const modelUrl = 'https://cdn.jsdelivr.net/gh/andrey-bashanov/yolov8-tfjs@main/model/yolov8n_web_model/model.json';
-      const localModelPath = 'indexeddb://yolov8n-m1m-cache';
+  const downloadAndInstallModel = async () => {
+      setNeedsDownload(false);
+      setLoading(true);
+      setError(null);
+      
+      const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
 
-      try {
-        setLoading(true);
-        let loadedModel: tf.GraphModel | null = null;
-        
+      for (let i = 0; i < MODEL_MIRRORS.length; i++) {
+        const url = MODEL_MIRRORS[i];
         try {
-          loadedModel = await tf.loadGraphModel(localModelPath);
+          setActiveMirrorIndex(i);
+          setLoadingMessage(`Downloading Assets (Mirror ${i + 1})...`);
+          
+          const loadedModel = await tf.loadGraphModel(url);
+          
+          setLoadingMessage('Verifying Neural Integrity...');
+          // Warmup inference to check model validity
+          tf.tidy(() => loadedModel.predict(tf.zeros([1, 640, 640, 3])));
+
+          setLoadingMessage('Installing to Local Storage...');
+          await loadedModel.save(localModelPath);
+          console.log(`[NEURAL] Model successfully installed from Mirror ${i + 1}`);
+          
+          setModel(loadedModel);
           setIsModelCached(true);
-        } catch (e) {
-          loadedModel = await tf.loadGraphModel(modelUrl);
-          try {
-            await loadedModel.save(localModelPath);
-            setIsModelCached(true);
-          } catch (saveErr) {}
+          setLoading(false);
+          return;
+        } catch (err) {
+          console.warn(`[NEURAL] Mirror ${i + 1} download failed:`, err);
         }
-        
-        if (loadedModel) {
-            setModel(loadedModel);
-            await startStream('SCREEN');
+      }
+
+      setError("INSTALL_FAIL: Unable to download model from any mirror.");
+      setLoading(false);
+  };
+
+  useEffect(() => {
+    const checkCacheAndInit = async () => {
+      setLoading(true);
+      setLoadingMessage('Checking Local VRAM...');
+      setModel(null); 
+      setError(null);
+      setNeedsDownload(false);
+      
+      try {
+        await tf.ready();
+        if (tf.getBackend() !== 'webgl') {
+          await tf.setBackend('webgl').catch(() => console.warn('WebGL backend not available, using cpu'));
         }
-      } catch (err: any) {
-        setError(`LINK_FAIL: Remote Repository Unreachable. Kernel Simulation Engaged.`);
-        setIsSimulating(true);
+      } catch (e) {
+        console.warn('TensorFlow backend initialization warning:', e);
+      }
+
+      const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
+
+      // 1. Try Loading from Cache First
+      try {
+        const loadedModel = await tf.loadGraphModel(localModelPath);
+        console.log('[NEURAL] Model loaded from IndexedDB cache');
+        setModel(loadedModel);
+        setIsModelCached(true);
         setLoading(false);
-        if (simTargets.current.length === 0) {
-            simTargets.current = [
-              { x: 0.2, y: 0.3, vx: 0.001, vy: 0.0012, label: 'SIM_TARGET_01' },
-              { x: 0.8, y: 0.7, vx: -0.001, vy: -0.0008, label: 'SIM_TARGET_02' }
-            ];
-        }
-        await startStream('SCREEN');
+      } catch (e) {
+        console.log('[NEURAL] Cache miss. Download required.');
+        setIsModelCached(false);
+        setNeedsDownload(true);
+        setLoading(false);
       }
     };
-    initModel();
+
+    checkCacheAndInit();
+    
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [profile.accessibility.neuralModelQuality]);
+
+  useEffect(() => {
+    return () => {
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       }
-    };
+    }
   }, []);
 
+  // Trigger capture logic on R2 press
   useEffect(() => {
-    if (!profile.accessibility.yoloEnabled) {
+    if (state.buttons[7]) {
+      processSporadicCapture();
+    }
+  }, [state.buttons]);
+
+  useEffect(() => {
+    if (!profile.accessibility.yoloEnabled || !model) {
       setAiTarget(null);
       return;
     }
 
     const detect = async () => {
       const now = performance.now();
-      if (now - lastInferenceRef.current < 32 && !isSimulating) {
+      if (now - lastInferenceRef.current < 32) {
         requestRef.current = requestAnimationFrame(detect);
         return;
       }
@@ -144,12 +351,23 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) return;
 
+      // Safety check: ensure video has valid dimensions before processing
+      if (video && video.readyState === 4) {
+         if (video.videoWidth === 0 || video.videoHeight === 0) {
+           requestRef.current = requestAnimationFrame(detect);
+           return;
+         }
+      } else {
+         requestRef.current = requestAnimationFrame(detect);
+         return;
+      }
+
       const inputSize = 640;
       let detections: { boxes: number[][], scores: number[], classes: number[] } = { boxes: [], scores: [], classes: [] };
 
       const startInference = performance.now();
 
-      if (model && !isSimulating && video && video.readyState === 4) {
+      if (model && video && video.readyState === 4) {
         try {
             detections = tf.tidy(() => {
               const img = tf.browser.fromPixels(video);
@@ -157,107 +375,69 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
               const expanded = resized.expandDims(0);
               const normalized = expanded.div(255.0);
               const output = model.predict(normalized) as tf.Tensor;
+              // YOLOv8 output: [1, 84, 8400]
               const res = output.squeeze([0]); 
-              const transposed = res.transpose([1, 0]); 
+              const transposed = res.transpose([1, 0]); // [8400, 84]
+              
+              // Split: boxes [cx, cy, w, h], scores [class0...class79]
               const [boxes, scores] = tf.split(transposed, [4, 80], 1);
+              
               const maxScores = scores.max(1);
               const classes = scores.argMax(1);
+              
               const nmsIndices = tf.image.nonMaxSuppression(
-                convertCenterToCorners(boxes),
+                convertCenterToCorners(boxes), // NMS requires corners
                 maxScores as tf.Tensor1D,
                 12, 0.45,
                 profile.accessibility?.yoloConfidence || 0.5
               );
+              
               return {
                 boxes: boxes.gather(nmsIndices).arraySync() as number[][],
                 scores: maxScores.gather(nmsIndices).arraySync() as number[],
                 classes: classes.gather(nmsIndices).arraySync() as number[]
               };
             });
+            
+            currentDetectionsRef.current = detections;
+
         } catch (e) {
             console.warn("[NEURAL] Runtime inference error:", e);
         }
-      } else if (isSimulating) {
-        simTargets.current.forEach(t => {
-          t.x += t.vx; t.y += t.vy;
-          if (t.x < 0.1 || t.x > 0.9) t.vx *= -1;
-          if (t.y < 0.15 || t.y > 0.85) t.vy *= -1;
-          detections.boxes.push([t.x * inputSize, t.y * inputSize, 60, 90]);
-          detections.scores.push(0.95 + Math.random() * 0.04);
-          detections.classes.push(0); 
-        });
       }
 
-      ctx.drawImage(video && video.readyState === 4 ? video : canvas, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      const scanY = (now % 2500) / 2500 * canvas.height;
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(canvas.width, scanY); ctx.stroke();
-
       let bestTarget = null;
       let bestDist = Infinity;
-
-      // Draw Center Crosshair with Glow
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2, 5, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Draw Slowdown Zone Indicator
-      if (profile.accessibility.aimSlowdownEnabled) {
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.1)';
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width * 0.1, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
 
       detections.boxes.forEach((box, i) => {
-        const [cx, cy, w, h] = box;
         const score = detections.scores[i];
-        if (detections.classes[i] !== 0) return;
+        if (detections.classes[i] !== 0 || score < (profile.accessibility.yoloConfidence || 0.5)) return;
 
+        // box is [cx, cy, w, h] in 640x640 space
+        const [cx, cy, w, h] = box;
+        
+        const scaleX = canvas.width / inputSize;
+        const scaleY = canvas.height / inputSize;
+        
+        // Convert to Top-Left for Drawing
+        const x1 = (cx - w / 2) * scaleX;
+        const y1 = (cy - h / 2) * scaleY;
+        const scaledW = w * scaleX;
+        const scaledH = h * scaleY;
+
+        ctx.strokeRect(x1, y1, scaledW, scaledH);
+        
         const normCX = cx / inputSize;
         const normCY = cy / inputSize;
         const dist = Math.sqrt(Math.pow(normCX - 0.5, 2) + Math.pow(normCY - 0.5, 2));
         
-        const isBest = dist < bestDist && score > (profile.accessibility.yoloConfidence || 0.5);
-        if (isBest) {
+        if (dist < bestDist) {
           bestDist = dist;
           bestTarget = { x: normCX, y: normCY };
-        }
-
-        if (profile.accessibility.visualIndicatorsEnabled) {
-          const x = (cx - w / 2) * (canvas.width / inputSize);
-          const y = (cy - h / 2) * (canvas.height / inputSize);
-          const width = w * (canvas.width / inputSize);
-          const height = h * (canvas.height / inputSize);
-          const color = isBest ? '#f43f5e' : '#a855f7';
-
-          ctx.strokeStyle = color;
-          ctx.lineWidth = isBest ? 2 : 1;
-          ctx.strokeRect(x, y, width, height);
-          
-          if (isBest) {
-            // Visualize tracking pull strength
-            const pullPower = profile.accessibility.yoloTrackingPower;
-            ctx.setLineDash([2, 4]);
-            ctx.strokeStyle = `rgba(244, 63, 94, ${0.3 + (pullPower/100) * 0.7})`;
-            ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, canvas.height / 2);
-            ctx.lineTo(x + width/2, y + height/2);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Pulse on target when snapped/hovering
-            if (dist < 0.1) {
-              ctx.beginPath();
-              ctx.arc(canvas.width / 2, canvas.height / 2, 10 + Math.sin(now/100) * 5, 0, Math.PI * 2);
-              ctx.strokeStyle = '#f43f5e';
-              ctx.stroke();
-            }
-          }
         }
       });
 
@@ -268,39 +448,109 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       requestRef.current = requestAnimationFrame(detect);
     };
 
-    detect();
-  }, [model, isSimulating, profile.accessibility.yoloEnabled, profile.accessibility.visualIndicatorsEnabled, profile.accessibility.aimSlowdownEnabled, profile.accessibility.yoloTrackingPower, setAiTarget]);
+    const startDetection = () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      detect();
+    };
+    
+    startDetection();
+    
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    }
+
+  }, [model, profile.accessibility.yoloEnabled, profile.accessibility.yoloConfidence, setAiTarget]);
 
   return (
     <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black">
       <video ref={videoRef} className="hidden" muted playsInline />
-      <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block opacity-95 grayscale-[0.2] contrast-125" />
+      <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block" />
       
       <div className="absolute inset-0 pointer-events-none p-10 flex flex-col justify-between z-20">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-6">
             <div className={`p-4 rounded-3xl ${profile.accessibility.yoloEnabled ? 'bg-purple-600/30' : 'bg-slate-800/50'}`}>
-              <BrainCircuit className={`w-10 h-10 ${profile.accessibility.yoloEnabled ? 'text-purple-400 animate-pulse' : 'text-slate-600'}`} />
+              <BrainCircuit className={`w-10 h-10 ${profile.accessibility.yoloEnabled && !loading && !error && !needsDownload ? 'text-purple-400 animate-pulse' : 'text-slate-600'}`} />
             </div>
             <div>
               <p className="text-[16px] font-black text-white uppercase tracking-[0.6em]">NEURAL_INTERCEPT</p>
               <div className="flex items-center gap-3">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">
-                  {isSimulating ? 'SIM_EMULATION' : sourceMode} | {fps}FPS | {inferenceTime}MS
+                  {error ? 'SIGNAL_LOST' : needsDownload ? 'INSTALL_REQ' : sourceMode} | {fps}FPS | {inferenceTime}MS
                 </p>
-                {isModelCached && !isSimulating && (
+                {isModelCached && (
                   <div className="flex items-center gap-1 text-[8px] text-green-500/60 font-black tracking-widest uppercase">
                     <HardDrive className="w-3 h-3" /> Local_VRAM_Link
+                  </div>
+                )}
+                {!isModelCached && !error && !loading && !needsDownload && (
+                   <div className="flex items-center gap-1 text-[8px] text-blue-500/60 font-black tracking-widest uppercase">
+                    <Wifi className="w-3 h-3" /> Mirror {activeMirrorIndex + 1}
                   </div>
                 )}
               </div>
             </div>
           </div>
           <div className="flex gap-4 pointer-events-auto">
-             <button onClick={() => startStream('SCREEN')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'SCREEN' && !isSimulating ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Monitor className="w-6 h-6" /></button>
-             <button onClick={() => startStream('CAMERA')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'CAMERA' && !isSimulating ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Camera className="w-6 h-6" /></button>
+             <button onClick={() => startStream('SCREEN')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'SCREEN' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Monitor className="w-6 h-6" /></button>
+             <button onClick={() => startStream('CAMERA')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'CAMERA' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Camera className="w-6 h-6" /></button>
           </div>
         </div>
+
+        {error && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-30">
+                <div className="text-center space-y-4">
+                    <ServerCrash className="w-12 h-12 text-red-500 mx-auto" />
+                    <p className="text-red-500 font-black uppercase tracking-widest max-w-sm mx-auto">{error}</p>
+                    <button onClick={downloadAndInstallModel} className="px-6 py-2 bg-slate-800 rounded-full text-[10px] font-black uppercase text-white hover:bg-slate-700 transition-colors">Retry Installation</button>
+                </div>
+            </div>
+        )}
+
+        {needsDownload && !loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-30 animate-in fade-in">
+                <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem] shadow-2xl">
+                    <div className="w-20 h-20 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto border border-blue-500/30 animate-pulse">
+                        <CloudDownload className="w-10 h-10 text-blue-400" />
+                    </div>
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">Neural Core Required</h3>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest leading-relaxed">
+                            YOLOv8n model must be downloaded and stored locally for offline neural tracking.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={downloadAndInstallModel}
+                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-[0.2em] transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3"
+                    >
+                        <Download className="w-4 h-4" /> Install Neural Matrix
+                    </button>
+                    <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest">Est. Size: ~6.2 MB • Persistent Storage</p>
+                </div>
+            </div>
+        )}
+
+        {/* Capture Stats HUD */}
+        {profile.accessibility.trainingConfig.enabled && !error && !needsDownload && (
+          <div className="self-end flex items-center gap-4 animate-in fade-in slide-in-from-right-4">
+             <div className="bg-slate-900/80 backdrop-blur-md p-3 rounded-2xl border border-white/5 flex items-center gap-3">
+               <Database className={`w-4 h-4 ${captureStats.lastReason === 'CAPTURED' ? 'text-green-500' : 'text-slate-500'}`} />
+               <div className="space-y-0.5">
+                 <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Dataset</p>
+                 <p className="text-[10px] font-black text-white uppercase">{captureStats.total} / {profile.accessibility.trainingConfig.maxImages}</p>
+               </div>
+             </div>
+             <div className="bg-slate-900/80 backdrop-blur-md p-3 rounded-2xl border border-white/5 flex items-center gap-3">
+               {captureStats.lastReason === 'CAPTURED' ? <Check className="w-4 h-4 text-green-500" /> : <Scan className="w-4 h-4 text-slate-500" />}
+               <div className="space-y-0.5">
+                 <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Capture State</p>
+                 <p className={`text-[10px] font-black uppercase ${captureStats.lastReason.startsWith('ERR') ? 'text-red-500' : captureStats.lastReason === 'CAPTURED' ? 'text-green-500' : 'text-slate-400'}`}>
+                   {captureStats.lastReason}
+                 </p>
+               </div>
+             </div>
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -308,7 +558,9 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
           <Loader2 className="w-16 h-16 text-blue-600 animate-spin" />
           <div className="mt-8 space-y-2 text-center">
             <h3 className="text-[12px] font-black text-white uppercase tracking-[0.5em] animate-pulse">Establishing Link...</h3>
-            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Verifying Neural Repository Integrity</p>
+            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+              {loadingMessage}
+            </p>
           </div>
         </div>
       )}

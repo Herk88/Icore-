@@ -50,6 +50,18 @@ export interface AxisMapping {
   curve: 'LINEAR' | 'EXPONENTIAL' | 'S_CURVE' | 'INSTANT' | 'CUSTOM';
 }
 
+export interface TrainingConfig {
+  enabled: boolean;
+  maxImages: number;
+  minInterval: number; // ms
+  confidenceThreshold: number; // 0.60
+  probLowConfidence: number; // 0.50
+  probHighConfidence: number; // 0.15
+  minBrightness: number; // 0-255
+  minSharpness: number; // Laplacian variance score
+  datasetPath: string;
+}
+
 export interface AccessibilitySettings {
   aimStabilizationStrength: number;
   snapToTargetEnabled: boolean;
@@ -80,6 +92,7 @@ export interface AccessibilitySettings {
   trainingAutoCapture: boolean;
   yoloConfidence: number;
   yoloTrackingPower: number; 
+  neuralModelQuality: 'fast' | 'accurate';
   gyroSmoothing: number;
   gyroInvertX: boolean;
   gyroInvertY: boolean;
@@ -89,6 +102,7 @@ export interface AccessibilitySettings {
   hudOpacity: number;
   hudPosition: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   hudVisible: boolean;
+  trainingConfig: TrainingConfig;
 }
 
 export interface Profile {
@@ -131,7 +145,6 @@ export interface GamepadState {
   };
 }
 
-// Added SecurityEvent interface used in SecurityInterceptor.tsx
 export interface SecurityEvent {
   timestamp: string;
   device: string;
@@ -142,4 +155,31 @@ export interface SecurityEvent {
   size: string;
   info: string;
   suspicious: boolean;
+}
+
+export interface TrainingDataPayload {
+  image: string; // Base64
+  labels: string; // YOLO format string
+  filename: string;
+}
+
+// API definition for the Electron preload script bridge
+export interface ICoreApi {
+  version: string;
+  minimize: () => void;
+  maximize: () => void;
+  close: () => void;
+  getRunningProcesses: () => Promise<string[]>;
+  sendKeyEvent: (args: { keyCode: string; type: 'keydown' | 'keyup' }) => void;
+  sendMouseMove: (args: { x: number; y: number }) => void;
+  sendMouseButtonEvent: (args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => void;
+  onKernelLog: (callback: (log: string) => void) => void;
+  onGameDetected: (callback: (processName: string | null) => void) => void;
+  saveTrainingData: (data: TrainingDataPayload) => Promise<{ success: boolean; reason?: string }>;
+}
+
+declare global {
+  interface Window {
+    icoreBridge: ICoreApi;
+  }
 }

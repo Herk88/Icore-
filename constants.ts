@@ -32,6 +32,7 @@ const defaultAccessibility: AccessibilitySettings = {
   trainingAutoCapture: false,
   yoloConfidence: 0.75,
   yoloTrackingPower: 35,
+  neuralModelQuality: 'fast',
   gyroSmoothing: 20,
   gyroInvertX: false,
   gyroInvertY: false,
@@ -40,9 +41,56 @@ const defaultAccessibility: AccessibilitySettings = {
   hudOpacity: 90,
   hudPosition: 'bottom-right',
   hudVisible: true,
+  trainingConfig: {
+    enabled: true,
+    maxImages: 1000,
+    minInterval: 2000,
+    confidenceThreshold: 0.60,
+    probLowConfidence: 0.50,
+    probHighConfidence: 0.15,
+    minBrightness: 30,
+    minSharpness: 100,
+    datasetPath: 'yolo_training_data'
+  }
 };
 
 export const DEFAULT_PROFILES: Profile[] = [
+  {
+    id: 'universal-native',
+    name: 'Universal Native: Desktop & FPS',
+    category: 'Default',
+    description: 'Instant preset. RS=Mouse, LS=WASD, R2=Click. Always Active.',
+    targetProcess: 'explorer.exe',
+    created: Date.now(),
+    gyroEnabled: false,
+    gyroSensitivity: 1.0,
+    flickStickEnabled: false,
+    oneHandedMode: 'NONE',
+    virtualOutput: 'KB_MOUSE',
+    pollingRate: 1000,
+    accessibility: { 
+      ...defaultAccessibility,
+      audioFeedbackEnabled: true 
+    },
+    mappings: [
+      { button: 'R2', mappedTo: 'Left Click', keyCode: '', type: 'MOUSE', mouseButton: 0 },
+      { button: 'L2', mappedTo: 'Right Click', keyCode: '', type: 'MOUSE', mouseButton: 2 },
+      { button: 'CROSS', mappedTo: 'Space', keyCode: 'Space', type: 'KEYBOARD' },
+      { button: 'CIRCLE', mappedTo: 'Crouch/Back', keyCode: 'KeyC', type: 'KEYBOARD' },
+      { button: 'SQUARE', mappedTo: 'Reload/Interact', keyCode: 'KeyR', type: 'KEYBOARD' },
+      { button: 'TRIANGLE', mappedTo: 'Inventory', keyCode: 'Tab', type: 'KEYBOARD' },
+      { button: 'L3', mappedTo: 'Sprint', keyCode: 'ShiftLeft', type: 'KEYBOARD' },
+      { button: 'R3', mappedTo: 'Melee', keyCode: 'KeyV', type: 'KEYBOARD' },
+      { button: 'OPTIONS', mappedTo: 'Escape', keyCode: 'Escape', type: 'KEYBOARD' },
+      { button: 'L1', mappedTo: 'Prev Weapon', keyCode: 'Digit1', type: 'KEYBOARD' },
+      { button: 'R1', mappedTo: 'Next Weapon', keyCode: 'Digit2', type: 'KEYBOARD' },
+    ],
+    axisMappings: [
+      { axis: 'RIGHT_STICK_X', mappedTo: 'MOUSE_MOVEMENT', sensitivity: 65, deadzone: 0.08, deadzoneType: 'CIRCULAR', curve: 'EXPONENTIAL' },
+      { axis: 'LEFT_STICK_X', mappedTo: 'WASD', sensitivity: 100, deadzone: 0.1, deadzoneType: 'CIRCULAR', curve: 'LINEAR' },
+    ],
+    radialItems: [],
+  },
   {
     id: 'warzone-ultra',
     name: 'Warzone: Slide Cancel Pro',
@@ -65,7 +113,6 @@ export const DEFAULT_PROFILES: Profile[] = [
       trainingAutoCapture: true,
       yoloTrackingPower: 50
     },
-    // Added missing keyCode properties for all mappings
     mappings: [
       { button: 'CIRCLE', mappedTo: 'Slide/Crouch', keyCode: 'KeyC', type: 'KEYBOARD', isTurbo: true, turboSpeed: 15 },
       { button: 'SQUARE', mappedTo: 'Reload', keyCode: 'KeyR', type: 'KEYBOARD' },
@@ -76,33 +123,6 @@ export const DEFAULT_PROFILES: Profile[] = [
     axisMappings: [
       { axis: 'RIGHT_STICK_X', mappedTo: 'MOUSE_MOVEMENT', sensitivity: 45, deadzone: 0.05, deadzoneType: 'CIRCULAR', curve: 'EXPONENTIAL' },
     ],
-    radialItems: [],
-  },
-  {
-    id: 'r6-siege-sticky',
-    name: 'R6 Siege: Tactical Lean',
-    category: 'Game-Specific',
-    description: 'Sticky lean toggles on L3/R3. ADS stabilization active.',
-    targetProcess: 'RainbowSix.exe',
-    created: Date.now(),
-    gyroEnabled: false,
-    gyroSensitivity: 1.0,
-    flickStickEnabled: false,
-    oneHandedMode: 'NONE',
-    virtualOutput: 'DS4',
-    pollingRate: 1000,
-    accessibility: { 
-      ...defaultAccessibility,
-      aimStabilizationStrength: 45,
-      stabilizationMode: 'Medium'
-    },
-    // Added missing keyCode properties for all mappings
-    mappings: [
-      { button: 'L3', mappedTo: 'Lean Left', keyCode: 'KeyQ', type: 'KEYBOARD', isSticky: true },
-      { button: 'R3', mappedTo: 'Lean Right', keyCode: 'KeyE', type: 'KEYBOARD', isSticky: true },
-      { button: 'CIRCLE', mappedTo: 'Crouch', keyCode: 'KeyC', type: 'KEYBOARD' },
-    ],
-    axisMappings: [],
     radialItems: [],
   },
   {
@@ -123,7 +143,6 @@ export const DEFAULT_PROFILES: Profile[] = [
       rapidFireEnabled: true,
       globalTurboRate: 20
     },
-    // Added missing keyCode properties for all mappings
     mappings: [
       { button: 'R2', mappedTo: 'Build/Fire', keyCode: '', type: 'MOUSE', isTurbo: true, turboSpeed: 20, mouseButton: 0 },
       { button: 'TRIANGLE', mappedTo: 'Pickaxe', keyCode: 'KeyF', type: 'KEYBOARD' },
@@ -145,28 +164,10 @@ export const DEFAULT_PROFILES: Profile[] = [
     virtualOutput: 'KB_MOUSE',
     pollingRate: 500,
     accessibility: { ...defaultAccessibility, oneHandedShiftButton: 'L3' },
-    // Added missing keyCode properties for all mappings
     mappings: [
       { button: 'L2', mappedTo: 'Right Click', keyCode: '', type: 'MOUSE', isSticky: true, mouseButton: 2 },
       { button: 'L1', mappedTo: 'Shift', keyCode: 'ShiftLeft', type: 'KEYBOARD' },
     ],
-    axisMappings: [],
-    radialItems: [],
-  },
-  {
-    id: 'fps-competitive',
-    name: 'Universal FPS Stack',
-    category: 'Default',
-    description: 'Zero-latency standard mapping.',
-    created: Date.now(),
-    gyroEnabled: false,
-    gyroSensitivity: 1.0,
-    flickStickEnabled: false,
-    oneHandedMode: 'NONE',
-    virtualOutput: 'XBOX',
-    pollingRate: 1000,
-    accessibility: { ...defaultAccessibility },
-    mappings: [],
     axisMappings: [],
     radialItems: [],
   }

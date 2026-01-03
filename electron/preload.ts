@@ -1,78 +1,42 @@
 
+import { contextBridge, ipcRenderer } from 'electron';
+
 /**
  * 1Man1Machine Desktop - Preload Bridge
  * Securely exposes HID Kernel APIs to the renderer process.
  */
 
-const m1mBridge = {
-  // Application Versioning
+const ICORE_API = {
   version: "3.2.0-STABLE",
   
-  // HID Mapping Persistence
-  saveProfile: (profile: any) => {
-    console.log("[IPC] Saving 1Man1Machine profile to storage");
-    localStorage.setItem(`m1m_profile_${profile.id}`, JSON.stringify(profile));
-    return true;
+  // Window Controls
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
+
+  // Process Info
+  getRunningProcesses: () => ipcRenderer.invoke('get-processes'),
+
+  // OS-Level Input Injection
+  sendKeyEvent: (args: { keyCode: string; type: 'keydown' | 'keyup' }) => {
+    ipcRenderer.send('send-key-event', args);
   },
-
-  // Kernel Communication
-  engageTurbo: (button: string, rate: number) => {
-    console.log(`[IPC] Kernel Command: 1M1M Turbo Engaged on ${button} @ ${rate}Hz`);
+  sendMouseMove: (args: { x: number; y: number }) => {
+    ipcRenderer.send('send-mouse-move', args);
   },
-
-  // Native UI Hooks
-  minimize: () => console.log("[IPC] Window: Minimize"),
-  maximize: () => console.log("[IPC] Window: Maximize"),
-  close: () => console.log("[IPC] Window: Close (Hide to Tray)"),
-
-  // Telemetry Stream
-  onKernelLog: (callback: (log: string) => void) => {
-    const logs = [
-      "[KERNEL] 1M1M IRQ Vector Hooked",
-      "[HID] 1M1M USB Descriptor Validated",
-      "[SYNC] Profile Hash Match",
-      "[DRV] Low Latency Buffer Engaged"
-    ];
-    setInterval(() => {
-      const randomLog = logs[Math.floor(Math.random() * logs.length)];
-      callback(`${new Date().toLocaleTimeString()} ${randomLog}`);
-    }, 8000);
+  sendMouseButtonEvent: (args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => {
+    ipcRenderer.send('send-mouse-button-event', args);
   },
+  
+  // File System Access for Training Data
+  saveTrainingData: (data: any) => ipcRenderer.invoke('save-training-data', data),
 
-  getRunningProcesses: async () => {
-    return [
-      'ModernWarfare.exe',
-      'eldenring.exe',
-      'FortniteClient-Win64-Shipping.exe',
-      'RainbowSix.exe',
-      'cod.exe',
-      'Valorant.exe',
-      'ApexLegends.exe',
-      'chrome.exe',
-      'discord.exe',
-      'spotify.exe'
-    ];
-  },
-
-  onGameDetected: (callback: (processName: string | null) => void) => {
-    const processes = [
-      'ModernWarfare.exe',
-      'eldenring.exe',
-      'FortniteClient-Win64-Shipping.exe',
-      'RainbowSix.exe',
-      'cod.exe',
-      null
-    ];
-    
-    setInterval(() => {
-      if (Math.random() > 0.85) {
-        const proc = processes[Math.floor(Math.random() * processes.length)];
-        console.log(`[IPC] Native: Process change detected -> ${proc || 'None'}`);
-        callback(proc);
-      }
-    }, 12000);
-  }
+  // Callbacks from Main
+  onKernelLog: (callback: (log: string) => void) => 
+    ipcRenderer.on('kernel-log', (_event, log) => callback(log)),
+  
+  onGameDetected: (callback: (processName: string | null) => void) => 
+    ipcRenderer.on('game-detected', (_event, processName) => callback(processName)),
 };
 
-// Expose to window
-(window as any).icoreBridge = m1mBridge;
+contextBridge.exposeInMainWorld('icoreBridge', ICORE_API);
