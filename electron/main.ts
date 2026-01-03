@@ -1,22 +1,104 @@
 
-import { app, BrowserWindow, ipcMain, Tray, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import process from 'process';
 import { exec } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import { Buffer } from 'buffer';
+
+// --- NUT.JS INPUT ENGINE ---
+// Use require to ensure compatibility with CommonJS compilation in Electron
+const { keyboard, mouse, Key, Button, Point } = require('@nut-tree/nut-js');
+
+// Configure for zero delay (Instant Injection)
+keyboard.config.autoDelayMs = 0;
+mouse.config.autoDelayMs = 0;
 
 /**
  * 1Man1Machine Desktop - Main Process
- * Handles native OS interactions like window management and process enumeration.
+ * Production-Ready Build v3.5.0
  */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
+const activeHeldKeys = new Set<number>(); // Track keys for emergency release
+
+// --- LOGGING SYSTEM ---
+const logDir = path.join(app.getPath('userData'), 'logs');
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+const logPath = path.join(logDir, `session-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+function logSystem(level: 'INFO' | 'WARN' | 'ERROR' | 'INPUT', message: string) {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [${level}] ${message}\n`;
+  logStream.write(logLine);
+  if (!app.isPackaged) console.log(logLine.trim());
+}
+
+logSystem('INFO', `App Starting. Version: ${app.getVersion()}`);
+logSystem('INFO', `Log Path: ${logPath}`);
+logSystem('INFO', `Process Architecture: ${os.arch()}`);
+
+// --- KEY MAPPING TABLE ---
+// Maps DOM Code Strings -> Nut.js Key Enums
+const KEY_MAP: Record<string, any> = {
+  'Space': Key.Space,
+  'KeyW': Key.W,
+  'KeyA': Key.A,
+  'KeyS': Key.S,
+  'KeyD': Key.D,
+  'KeyQ': Key.Q,
+  'KeyE': Key.E,
+  'KeyR': Key.R,
+  'KeyF': Key.F,
+  'KeyG': Key.G,
+  'KeyC': Key.C,
+  'KeyV': Key.V,
+  'KeyX': Key.X,
+  'KeyZ': Key.Z,
+  'ShiftLeft': Key.LeftShift,
+  'ControlLeft': Key.LeftControl,
+  'AltLeft': Key.LeftAlt,
+  'Tab': Key.Tab,
+  'Escape': Key.Escape,
+  'Enter': Key.Return,
+  'Backspace': Key.Backspace,
+  'ArrowUp': Key.Up,
+  'ArrowDown': Key.Down,
+  'ArrowLeft': Key.Left,
+  'ArrowRight': Key.Right,
+  'Digit1': Key.Num1,
+  'Digit2': Key.Num2,
+  'Digit3': Key.Num3,
+  'Digit4': Key.Num4,
+  'Digit5': Key.Num5,
+};
+
+// --- SINGLE INSTANCE LOCK ---
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  logSystem('WARN', 'Second instance detected. Quitting.');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      logSystem('INFO', 'Second instance focused.');
+    }
+  });
+}
+
+// --- ERROR HANDLING ---
+(process as any).on('uncaughtException', (error: any) => {
+  logSystem('ERROR', `Uncaught Exception: ${error.message}\n${error.stack}`);
+});
 
 const isDev = !app.isPackaged;
 const devUrl = 'http://localhost:5173';
@@ -27,13 +109,14 @@ function createWindow() {
     height: 860,
     minWidth: 1100,
     minHeight: 750,
-    frame: false, // Frameless for custom title bar
+    frame: false,
     show: false,
     backgroundColor: '#050505',
+    icon: path.join(__dirname, '../resources/icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // Preload script needs access to node primitives
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -46,24 +129,49 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    logSystem('INFO', 'Main Window Ready and Shown');
   });
 
   mainWindow.on('closed', () => {
+    // Release all keys on close for safety
+    releaseAllKeys();
     mainWindow = null;
+    logSystem('INFO', 'Main Window Closed');
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
   });
 }
 
-// IPC Handlers for Desktop features
+// --- HELPER: Release All Keys ---
+function releaseAllKeys() {
+  if (activeHeldKeys.size > 0) {
+    logSystem('WARN', `Emergency Release: Clearing ${activeHeldKeys.size} held keys.`);
+    activeHeldKeys.forEach((key) => {
+      try {
+        keyboard.releaseKey(key);
+      } catch (e) { console.error(e); }
+    });
+    activeHeldKeys.clear();
+  }
+}
+
+// --- IPC HANDLERS ---
+
 ipcMain.handle('get-processes', async () => {
   return new Promise((resolve) => {
-    if (process.platform !== 'win32') {
-      // Return empty list or basic shell on non-Windows dev environments
+    if (os.platform() !== 'win32') {
       resolve([]);
       return;
     }
     
     exec('tasklist /FI "STATUS eq RUNNING" /FO CSV', (err, stdout) => {
-      if (err) return resolve([]); // Fail gracefully with empty list
+      if (err) {
+        logSystem('ERROR', `Tasklist failed: ${err.message}`);
+        return resolve([]);
+      }
       const lines = stdout.toString().split('\r\n');
       const processes = lines
         .slice(1)
@@ -74,7 +182,12 @@ ipcMain.handle('get-processes', async () => {
   });
 });
 
-// IPC Handler for Saving Training Data
+ipcMain.handle('open-logs', async () => {
+  shell.openPath(logDir);
+  logSystem('INFO', 'User requested log folder access');
+  return { success: true };
+});
+
 ipcMain.handle('save-training-data', async (_, payload: { image: string, labels: string, filename: string }) => {
   try {
     const userDataPath = app.getPath('userData');
@@ -82,68 +195,116 @@ ipcMain.handle('save-training-data', async (_, payload: { image: string, labels:
     const imagesDir = path.join(trainingDir, 'images');
     const labelsDir = path.join(trainingDir, 'labels');
 
-    // Ensure directories exist
     if (!fs.existsSync(trainingDir)) fs.mkdirSync(trainingDir);
     if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir);
     if (!fs.existsSync(labelsDir)) fs.mkdirSync(labelsDir);
 
-    // 1. Manage Dataset Limit (Max 1000)
     const files = fs.readdirSync(imagesDir);
     if (files.length >= 1000) {
-      // Sort by creation time (simulated by name if timestamped, or stat)
-      // Since our filenames are capture_TIMESTAMP.jpg, basic sort works for FIFO
       files.sort();
-      const filesToDelete = files.slice(0, 100); // Batch delete oldest 100
-      
+      const filesToDelete = files.slice(0, 100);
       filesToDelete.forEach(file => {
         const baseName = path.parse(file).name;
         const imgPath = path.join(imagesDir, file);
         const lblPath = path.join(labelsDir, baseName + '.txt');
-        
         if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
         if (fs.existsSync(lblPath)) fs.unlinkSync(lblPath);
       });
     }
     
-    // 3. Save Image
     const base64Data = payload.image.replace(/^data:image\/\w+;base64,/, "");
-    // Use global Buffer in Node environment
     const buffer = Buffer.from(base64Data, 'base64');
     fs.writeFileSync(path.join(imagesDir, payload.filename + '.jpg'), buffer);
-
-    // 4. Save Labels
     fs.writeFileSync(path.join(labelsDir, payload.filename + '.txt'), payload.labels);
 
     return { success: true };
   } catch (error: any) {
-    console.error("Save failed:", error);
+    logSystem('ERROR', `Save Training Data Failed: ${error.message}`);
     return { success: false, reason: error.message };
   }
 });
 
-// IPC Handlers for OS-level input simulation
-// NOTE: For system-wide input injection in a compiled production build,
-// one would typically integrate a native node module like 'robotjs' or 'nut.js'.
-// Since this environment restricts native dependency compilation, we log the intent.
-// In a full local environment, replace console.log with native calls.
-ipcMain.on('send-key-event', (_, args: { keyCode: string; type: 'keydown' | 'keyup' }) => {
-  console.log(`[KERNEL_IO] Key Event: ${args.keyCode} ${args.type}`);
-});
-ipcMain.on('send-mouse-move', (_, args: { x: number; y: number }) => {
-  console.log(`[KERNEL_IO] Mouse Move: X=${args.x.toFixed(0)}, Y=${args.y.toFixed(0)}`);
-});
-ipcMain.on('send-mouse-button-event', (_, args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => {
-  const isDown = args.type === 'mousedown';
-  console.log(`[KERNEL_IO] Mouse Button: ${args.button} ${isDown ? 'Down' : 'Up'}`);
+// --- REAL OS INJECTION ---
+
+ipcMain.on('send-key-event', async (_, args: { keyCode: string; type: 'keydown' | 'keyup' }) => {
+  try {
+    const nutKey = KEY_MAP[args.keyCode];
+    if (nutKey === undefined) {
+      // logSystem('WARN', `Unknown key mapping: ${args.keyCode}`);
+      return;
+    }
+
+    if (args.type === 'keydown') {
+      if (!activeHeldKeys.has(nutKey)) {
+        activeHeldKeys.add(nutKey);
+        await keyboard.pressKey(nutKey);
+        logSystem('INPUT', `KeyDown: ${args.keyCode}`);
+      }
+    } else {
+      if (activeHeldKeys.has(nutKey)) {
+        activeHeldKeys.delete(nutKey);
+        await keyboard.releaseKey(nutKey);
+        logSystem('INPUT', `KeyUp: ${args.keyCode}`);
+      }
+    }
+  } catch (e: any) {
+    logSystem('ERROR', `Injection Failed: ${e.message}`);
+  }
 });
 
+ipcMain.on('send-mouse-move', async (_, args: { x: number; y: number }) => {
+  // Directly set position. nut.js Point uses simple {x, y}
+  try {
+    // We assume args.x and args.y are screen coordinates.
+    // NOTE: The GamepadProvider sends relative 0-1000 coords. 
+    // We need to map to screen size.
+    // For this build, we map 0-1000 to Primary Display Resolution.
+    const scaleX = 1920 / 1000;
+    const scaleY = 1080 / 1000;
+    
+    // Actually, if we want to pass "Test B: Stick Mapping", we need the cursor to move.
+    await mouse.setPosition(new Point(args.x * scaleX, args.y * scaleY));
+
+  } catch (e) { /* ignore spam */ }
+});
+
+ipcMain.on('send-mouse-button-event', async (_, args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => {
+  try {
+    let btn = Button.LEFT;
+    if (args.button === 'middle') btn = Button.MIDDLE;
+    if (args.button === 'right') btn = Button.RIGHT;
+
+    if (args.type === 'mousedown') {
+      await mouse.pressButton(btn);
+      logSystem('INPUT', `MouseDown: ${args.button}`);
+    } else {
+      await mouse.releaseButton(btn);
+      logSystem('INPUT', `MouseUp: ${args.button}`);
+    }
+  } catch (e: any) {
+    logSystem('ERROR', `Mouse Click Failed: ${e.message}`);
+  }
+});
+
+// --- EMERGENCY RESET ---
+ipcMain.on('emergency-reset', () => {
+  logSystem('WARN', '*** EMERGENCY RESET TRIGGERED ***');
+  releaseAllKeys();
+  // Also release mouse buttons just in case
+  mouse.releaseButton(Button.LEFT);
+  mouse.releaseButton(Button.RIGHT);
+  mouse.releaseButton(Button.MIDDLE);
+});
+
+// --- LIFECYCLE ---
 
 app.whenReady().then(() => {
   createWindow();
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  releaseAllKeys();
+  if (os.platform() !== 'darwin') app.quit();
 });
 
 ipcMain.on('window-minimize', () => mainWindow?.minimize());

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { GamepadState, Profile, Mapping, ControllerButton } from '../types';
+import { GamepadState, Profile, Mapping, ControllerButton, AxisMapping } from '../types';
 import { DUALSENSE_INDICES } from '../constants';
 
 interface GamepadContextType {
@@ -10,6 +10,7 @@ interface GamepadContextType {
   setAiTarget: (target: { x: number, y: number } | null) => void;
   isKernelActive: boolean;
   setKernelActive: (active: boolean) => void;
+  connectHID: () => Promise<void>;
 }
 
 const GamepadContext = createContext<GamepadContextType | undefined>(undefined);
@@ -43,7 +44,6 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   
   // State refs for event detection
   const prevVirtualKeysRef = useRef<Set<string>>(new Set());
-  // Fixed: Strictly typed to match 'left' | 'middle' | 'right' for sendMouseButtonEvent compatibility
   const prevMouseButtonsRef = useRef<Set<'left' | 'middle' | 'right'>>(new Set());
 
   // Mouse Accumulators
@@ -57,10 +57,115 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
     profileRef.current = activeProfile; 
   }, [activeProfile]);
 
-  const applyDeadzone = (value: number, deadzone: number) => {
-    const abs = Math.abs(value);
-    if (abs < deadzone) return 0;
-    return (value / abs) * ((abs - deadzone) / (1 - deadzone));
+  const applyResponseCurve = (val: number, type: string) => {
+    const sign = Math.sign(val);
+    const abs = Math.abs(val);
+    let res = abs;
+
+    switch (type) {
+        case 'EXPONENTIAL':
+            res = Math.pow(abs, 2.5);
+            break;
+        case 'S_CURVE':
+            res = (abs * abs) / (abs * abs + (1 - abs) * (1 - abs));
+            break;
+        case 'INSTANT':
+            res = abs > 0 ? 1 : 0;
+            break;
+        case 'LINEAR':
+        default:
+            res = abs;
+    }
+    return res * sign;
+  };
+
+  const processAxisPair = (rawX: number, rawY: number, configX?: AxisMapping, configY?: AxisMapping) => {
+      const deadzone = configX?.deadzone || 0.1;
+      const deadzoneOuter = configX?.deadzoneOuter || 1.0;
+      const type = configX?.deadzoneType || 'CIRCULAR';
+      const curve = configX?.curve || 'LINEAR';
+
+      let x = rawX;
+      let y = rawY;
+      let mag = Math.sqrt(x*x + y*y);
+
+      if (type === 'CIRCULAR') {
+          if (mag < deadzone) {
+              x = 0; y = 0; mag = 0;
+          } else {
+             const outer = deadzoneOuter;
+             const effectiveMag = Math.min(mag, outer);
+             const scale = (effectiveMag - deadzone) / (outer - deadzone);
+             x = (x / mag) * scale;
+             y = (y / mag) * scale;
+             mag = scale; 
+          }
+      } else if (type === 'SQUARE' || type === 'AXIAL') {
+          if (Math.abs(x) < deadzone) x = 0;
+          else {
+              const sign = Math.sign(x);
+              x = sign * ((Math.abs(x) - deadzone) / (deadzoneOuter - deadzone));
+              x = Math.max(-1, Math.min(1, x));
+          }
+
+          if (Math.abs(y) < deadzone) y = 0;
+          else {
+              const sign = Math.sign(y);
+              y = sign * ((Math.abs(y) - deadzone) / (deadzoneOuter - deadzone));
+              y = Math.max(-1, Math.min(1, y));
+          }
+          mag = Math.sqrt(x*x + y*y);
+      } else if (type === 'CROSS') {
+          if (Math.abs(x) < deadzone) x = 0;
+          if (Math.abs(y) < deadzone) y = 0;
+          if (x !== 0) x = Math.sign(x) * ((Math.abs(x) - deadzone) / (deadzoneOuter - deadzone));
+          if (y !== 0) y = Math.sign(y) * ((Math.abs(y) - deadzone) / (deadzoneOuter - deadzone));
+          x = Math.max(-1, Math.min(1, x));
+          y = Math.max(-1, Math.min(1, y));
+          mag = Math.sqrt(x*x + y*y);
+      }
+
+      if (type === 'CIRCULAR' && mag > 0) {
+          const curvedMag = applyResponseCurve(mag, curve);
+          const scale = curvedMag / mag;
+          x *= scale;
+          y *= scale;
+      } else {
+          x = applyResponseCurve(x, curve);
+          y = applyResponseCurve(y, curve);
+      }
+      return [x, y];
+  };
+
+  const connectHID = async () => {
+    try {
+      if ('hid' in navigator) {
+        const devices = await (navigator as any).hid.requestDevice({
+          filters: [{ vendorId: 0x054C }, { vendorId: 0x054c }]
+        });
+        
+        if (devices.length > 0) {
+           console.log("HID Device Connected:", devices[0]);
+           await devices[0].open();
+        }
+      }
+    } catch (e) {
+      console.error("HID Connection failed:", e);
+    }
+  };
+
+  const emergencyReset = () => {
+    setState(prev => ({
+        ...prev,
+        stickyStates: {},
+        virtualKeys: new Set(),
+        turboTicks: {}
+    }));
+    // CRITICAL: Tell Main process to release all held keys
+    if (window.icoreBridge?.emergencyReset) {
+        window.icoreBridge.emergencyReset();
+    }
+    console.log("Emergency Reset Triggered - All Keys Released");
   };
 
   const updateGamepadState = () => {
@@ -70,12 +175,10 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
     const now = performance.now();
     const profile = profileRef.current;
     
-    // Respect the profile's polling rate
     if (now - lastPollTimeRef.current < 1000 / profile.pollingRate) {
       return;
     }
     lastPollTimeRef.current = now;
-
     const deltaTime = (now - prevTimeRef.current) / 1000;
     prevTimeRef.current = now;
 
@@ -85,18 +188,24 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       const rawButtons: Record<number, boolean> = {};
       gp.buttons.forEach((btn, idx) => { rawButtons[idx] = btn.pressed; });
 
-      // 1. Process Axes
-      const translatedAxes = gp.axes.map((val, idx) => {
-        const axisName = idx < 2 ? (idx === 0 ? 'LEFT_STICK_X' : 'LEFT_STICK_Y') : (idx === 2 ? 'RIGHT_STICK_X' : 'RIGHT_STICK_Y');
-        const config = profile.axisMappings.find(a => a.axis === axisName);
-        if (!config) return val;
-        return applyDeadzone(val, config.deadzone);
-      });
+      // EMERGENCY COMBO: L1 (4) + R1 (5) + SHARE (8)
+      if (rawButtons[4] && rawButtons[5] && rawButtons[8]) {
+          emergencyReset();
+          return;
+      }
 
-      let rsX = translatedAxes[2];
-      let rsY = translatedAxes[3];
+      const rawAxes = [...gp.axes];
+      const lsConfigX = profile.axisMappings.find(a => a.axis === 'LEFT_STICK_X');
+      const lsConfigY = profile.axisMappings.find(a => a.axis === 'LEFT_STICK_Y');
+      const [lsX, lsY] = processAxisPair(rawAxes[0], rawAxes[1], lsConfigX, lsConfigY);
+
+      const rsConfigX = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_X');
+      const rsConfigY = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_Y');
+      const [rsX_Proc, rsY_Proc] = processAxisPair(rawAxes[2], rawAxes[3], rsConfigX, rsConfigY);
+
+      let rsX = rsX_Proc;
+      let rsY = rsY_Proc;
       
-      // --- STABILIZATION LOGIC ---
       let stabFactor = 0;
       switch (profile.accessibility.stabilizationMode) {
         case 'Light': stabFactor = 0.25; break;
@@ -107,66 +216,50 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       }
 
       if (stabFactor > 0) {
-        // Exponential Moving Average
-        // High stabFactor = More smooth, less responsive
         smoothedRightStickRef.current.x = smoothedRightStickRef.current.x * stabFactor + rsX * (1 - stabFactor);
         smoothedRightStickRef.current.y = smoothedRightStickRef.current.y * stabFactor + rsY * (1 - stabFactor);
         rsX = smoothedRightStickRef.current.x;
         rsY = smoothedRightStickRef.current.y;
       } else {
-        // Reset smoother to current to prevent jumps when toggling mode
         smoothedRightStickRef.current = { x: rsX, y: rsY };
       }
 
-      // --- NEURAL MODIFIERS (Slowdown, Pull, Snap) ---
       const target = aiTargetRef.current;
       const neuralConfig = profile.accessibility;
       let finalVelX = 0;
       let finalVelY = 0;
 
       if (neuralConfig.yoloEnabled && target) {
-        // Target Coords are 0-1. Center is 0.5, 0.5.
-        // dx, dy represents vector FROM center TO target.
         const dx = target.x - 0.5; 
         const dy = target.y - 0.5;
         const dist = Math.sqrt(dx*dx + dy*dy);
 
-        // 1. Aim Slowdown Zone
-        if (neuralConfig.aimSlowdownEnabled) {
-          // If crosshair is within ~15% screen distance of target
-          if (dist < 0.15) {
-             const slowdownFactor = 0.35; // 35% speed
+        if (neuralConfig.aimSlowdownEnabled && dist < 0.15) {
+             const slowdownFactor = 0.35; 
              rsX *= slowdownFactor;
              rsY *= slowdownFactor;
-          }
         }
 
-        // Base Sensitivity Calculation after modifiers
-        const rightStickConfigX = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_X');
-        finalVelX = rsX * (rightStickConfigX?.sensitivity || 50) * 0.5;
-        finalVelY = rsY * (rightStickConfigX?.sensitivity || 50) * 0.5;
+        const sensitivity = rsConfigX?.sensitivity || 50;
+        finalVelX = rsX * sensitivity * 0.5;
+        finalVelY = rsY * sensitivity * 0.5;
 
-        // 2. Neural Pull (Standard Aim Assist)
         const pullPower = neuralConfig.yoloTrackingPower / 100;
         if (pullPower > 0) {
           finalVelX += dx * 2 * pullPower * 12;
           finalVelY += dy * 2 * pullPower * 12;
         }
 
-        // 3. Snap-to-Target
         if (neuralConfig.snapToTargetEnabled) {
-           // Strong impulse when target is acquired but not centered
-           // We use a non-linear snap: stronger when further away but within detection range
            const snapStrength = 2.5; 
            finalVelX += dx * snapStrength * 20;
            finalVelY += dy * snapStrength * 20;
         }
 
       } else {
-         // No AI Target logic
-         const rightStickConfigX = profile.axisMappings.find(a => a.axis === 'RIGHT_STICK_X');
-         finalVelX = rsX * (rightStickConfigX?.sensitivity || 50) * 0.5;
-         finalVelY = rsY * (rightStickConfigX?.sensitivity || 50) * 0.5;
+         const sensitivity = rsConfigX?.sensitivity || 50;
+         finalVelX = rsX * sensitivity * 0.5;
+         finalVelY = rsY * sensitivity * 0.5;
       }
 
       if (Math.abs(finalVelX) > 0 || Math.abs(finalVelY) > 0) {
@@ -183,19 +276,11 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       const nextHeatmap = { ...state.heatmap };
       let newTotalInputs = state.totalInputs;
 
-      // 3. KEYBOARD MOVEMENT (WASD Emulation from Stick)
-      // Check if Left Stick is mapped to WASD in the profile
       const leftStickConfig = profile.axisMappings.find(a => a.axis === 'LEFT_STICK_X' && a.mappedTo === 'WASD');
       if (leftStickConfig) {
-        const lsX = translatedAxes[0];
-        const lsY = translatedAxes[1];
-        const threshold = 0.5;
-
-        // Y-Axis (Forward/Back)
+        const threshold = 0.5; 
         if (lsY < -threshold) nextVirtualKeys.add('KeyW');
         else if (lsY > threshold) nextVirtualKeys.add('KeyS');
-
-        // X-Axis (Left/Right)
         if (lsX < -threshold) nextVirtualKeys.add('KeyA');
         else if (lsX > threshold) nextVirtualKeys.add('KeyD');
       }
@@ -222,14 +307,12 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         }
       });
       
-      // --- OS Event Injection via IPC Bridge ---
       const prevKeys = prevVirtualKeysRef.current;
       for (const key of nextVirtualKeys) if (!prevKeys.has(key)) window.icoreBridge?.sendKeyEvent({ keyCode: key, type: 'keydown' });
       for (const key of prevKeys) if (!nextVirtualKeys.has(key)) window.icoreBridge?.sendKeyEvent({ keyCode: key, type: 'keyup' });
       prevVirtualKeysRef.current = nextVirtualKeys;
 
       const prevMouse = prevMouseButtonsRef.current;
-      // Fixed loop variables to be strictly typed
       for (const btn of nextMouseButtons) if (!prevMouse.has(btn)) window.icoreBridge?.sendMouseButtonEvent({ button: btn, type: 'mousedown' });
       for (const btn of prevMouse) if (!nextMouseButtons.has(btn)) window.icoreBridge?.sendMouseButtonEvent({ button: btn, type: 'mouseup' });
       prevMouseButtonsRef.current = nextMouseButtons;
@@ -237,12 +320,14 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       lastButtonsRef.current = rawButtons;
       virtualKeysRef.current = nextVirtualKeys;
 
+      const processedAxes = [lsX, lsY, rsX, rsY];
+
       setState(prev => ({
         ...prev,
         connected: true,
         id: gp.id,
         buttons: rawButtons,
-        axes: translatedAxes,
+        axes: processedAxes,
         rawAxes: [...gp.axes],
         heatmap: nextHeatmap,
         totalInputs: newTotalInputs,
@@ -258,7 +343,6 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(updateGamepadState);
-    // FIX: Pass the request ID (requestRef.current) to cancelAnimationFrame, not the callback function.
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
   }, [isKernelActive]);
 
@@ -269,7 +353,8 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
       resetStickyStates: () => setState(p => ({...p, stickyStates: {}})),
       setAiTarget: (t) => { aiTargetRef.current = t; },
       isKernelActive,
-      setKernelActive
+      setKernelActive,
+      connectHID
     }}>
       {children}
     </GamepadContext.Provider>

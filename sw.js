@@ -5,8 +5,7 @@ const ASSETS_TO_CACHE = [
   './index.tsx',
   './App.tsx',
   './manifest.json',
-  'https://cdn.tailwindcss.com',
-  'https://esm.sh/@google/genai@^1.34.0'
+  'https://cdn.tailwindcss.com'
 ];
 
 self.addEventListener('install', (event) => {

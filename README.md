@@ -1,3 +1,4 @@
+
 # 1Man1Machine by Hernan H
 ## Neural Performance Suite // Deployment Directive v3.5.0
 
@@ -10,6 +11,7 @@
 *   **Hardware**: Sony DualSense Controller (CFI-ZCT1W or CFI-ZCT1G).
 *   **Interface**: USB-C Cable (Required for 1000Hz polling) or Bluetooth 5.0+.
 *   **Software**: Node.js v18.0.0+ and a Chromium-based browser (Chrome/Edge) for WebHID support.
+*   **Dependencies**: Visual C++ Redistributable 2015-2022 (Required for Input Injection).
 
 ---
 
@@ -26,19 +28,11 @@ Download or clone the repository to your local drive.
 # Navigate to your project folder
 cd C:\Path\To\1Man1Machine
 
-# Install all neural and hardware dependencies
+# Install all neural and hardware dependencies (Ensure Visual Studio Build Tools are present)
 npm install
 ```
 
-#### 3. Configure Neural Intelligence (Optional)
-To enable the **Neural Consultant (AI)**, you need a Gemini API Key.
-*   Get a key from [Google AI Studio](https://aistudio.google.com/).
-*   Create a `.env` file in the root directory:
-```env
-API_KEY=your_gemini_api_key_here
-```
-
-#### 4. Launching the Suite
+#### 3. Launching the Suite
 You can run the suite in two modes:
 
 **A. Web Interface (Instant Deployment)**
@@ -53,7 +47,7 @@ Required for system-wide mapping and anti-cheat stealth protocols.
 ```powershell
 npm run build:win
 ```
-*   The installer will be generated in the `dist/` or `installers/` folder.
+*   The installer will be generated in the `release/` folder.
 *   Run the `.exe` to install the standalone 1Man1Machine kernel.
 
 ---
@@ -80,6 +74,7 @@ npm run build:win
 ### 🛠️ Troubleshooting for Windows 11
 
 *   **HID Access Denied**: Ensure no other remapper (like DS4Windows or Steam) is "hiding" the controller. Close those apps before launching 1Man1Machine.
+*   **Input Injection Failed**: Ensure you have installed the Visual C++ Redistributables. Run the application as Administrator if targeted games block input.
 *   **Latency Spikes**: Connect to a USB 3.0 port. Avoid USB hubs for the lowest possible interrupt latency.
 *   **Neural Lag**: Ensure your GPU drivers are updated. 1Man1Machine uses WebGL/WebGPU acceleration via TensorFlow.js.
 

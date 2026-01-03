@@ -45,7 +45,8 @@ export interface AxisMapping {
   axis: ControllerAxis;
   mappedTo: 'WASD' | 'MOUSE_MOVEMENT' | 'SCROLL' | 'FLICK_STICK' | 'GYRO_MOUSE' | 'NONE';
   sensitivity: number;
-  deadzone: number;
+  deadzone: number; // Inner deadzone (0-1)
+  deadzoneOuter: number; // Outer deadzone (0-1)
   deadzoneType: 'CIRCULAR' | 'SQUARE' | 'CROSS' | 'AXIAL';
   curve: 'LINEAR' | 'EXPONENTIAL' | 'S_CURVE' | 'INSTANT' | 'CUSTOM';
 }
@@ -170,9 +171,11 @@ export interface ICoreApi {
   maximize: () => void;
   close: () => void;
   getRunningProcesses: () => Promise<string[]>;
+  openLogsFolder: () => Promise<void>;
   sendKeyEvent: (args: { keyCode: string; type: 'keydown' | 'keyup' }) => void;
   sendMouseMove: (args: { x: number; y: number }) => void;
   sendMouseButtonEvent: (args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => void;
+  emergencyReset: () => void;
   onKernelLog: (callback: (log: string) => void) => void;
   onGameDetected: (callback: (processName: string | null) => void) => void;
   saveTrainingData: (data: TrainingDataPayload) => Promise<{ success: boolean; reason?: string }>;

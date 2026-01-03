@@ -1,10 +1,12 @@
 
 {
   "name": "1man1machine-desktop",
-  "productName": "1Man1Machine by Hernan H",
-  "version": "3.2.0",
+  "productName": "1Man1Machine",
+  "version": "3.5.0",
   "description": "High-performance standalone DualSense mapping engine by Hernan H with Neural Interceptor logic.",
-  "main": "electron/main.js",
+  "main": "dist-electron/main.js",
+  "author": "Hernan H",
+  "license": "MIT",
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
@@ -13,21 +15,21 @@
     "build:frontend": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps",
     "test": "vitest"
   },
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "electron": "28.0.0",
-    "lucide-react": "0.562.0"
+    "lucide-react": "0.562.0",
+    "@nut-tree/nut-js": "^3.1.2"
   },
   "devDependencies": {
+    "electron": "28.0.0",
+    "electron-builder": "24.9.1",
     "vite": "5.0.0",
     "@vitejs/plugin-react": "4.2.0",
     "typescript": "5.3.0",
-    "electron-builder": "24.9.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/node": "20.10.0",
@@ -41,26 +43,37 @@
     "autoprefixer": "^10.4.17"
   },
   "build": {
-    "appId": "com.m1m.neural",
-    "productName": "1Man1Machine by Hernan H",
+    "appId": "com.hernan.m1m",
+    "productName": "1Man1Machine",
+    "copyright": "Copyright © 2024 Hernan H",
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "backend/**/*"
+      "dist-electron/**/*",
+      "resources/**/*"
     ],
+    "directories": {
+      "output": "release"
+    },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ],
       "icon": "resources/icon.ico"
     },
-    "mac": {
-      "target": ["dmg"],
-      "icon": "resources/icon.icns",
-      "category": "public.app-category.games"
-    },
-    "linux": {
-      "target": ["AppImage"],
-      "icon": "resources/icon.png",
-      "category": "Game"
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "1Man1Machine"
     }
   }
 }

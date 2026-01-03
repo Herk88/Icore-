@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useGamepad } from './GamepadProvider';
-import { BarChart3, Clock, Zap, Target, ShieldCheck, Activity, Cpu, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { BarChart3, Clock, Zap, Target, ShieldCheck, Activity, Cpu, AlertCircle, CheckCircle2, FileText } from 'lucide-react';
 
 const AnalyticsView: React.FC = () => {
   const { state, resetStats } = useGamepad();
@@ -16,15 +16,13 @@ const AnalyticsView: React.FC = () => {
 
   const runDiagnostics = () => {
     setDiagnosticStatus('RUNNING');
-    
-    // Perform a real "System Check" by verifying connected hardware and bridge
-    const isBridgeActive = !!window.icoreBridge;
-    const isControllerActive = state.connected;
-    
-    // Simulate scan time but result depends on real state
     setTimeout(() => {
         setDiagnosticStatus('COMPLETE');
     }, 1500);
+  };
+  
+  const openLogs = () => {
+    window.icoreBridge?.openLogsFolder();
   };
 
   const topButtons = Object.entries(state.heatmap)
@@ -36,6 +34,12 @@ const AnalyticsView: React.FC = () => {
       <div className="flex items-center justify-between mb-2">
          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Neural Analytics</h2>
          <div className="flex gap-4">
+            <button 
+              onClick={openLogs}
+              className="px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest border bg-slate-900 border-white/10 text-slate-400 hover:bg-slate-800 transition-colors flex items-center gap-2"
+            >
+               <FileText className="w-3 h-3" /> View System Logs
+            </button>
             <button 
               onClick={runDiagnostics}
               className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${diagnosticStatus === 'COMPLETE' ? 'bg-green-600/20 border-green-500 text-green-500' : 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/30'}`}

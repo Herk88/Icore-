@@ -6,9 +6,9 @@ import MappingList from './components/MappingList';
 import AnalyticsView from './components/AnalyticsView';
 import TestingView from './components/TestingView';
 import HelpView from './components/HelpView';
-import NeuralConsultant from './components/NeuralConsultant';
 import SecurityInterceptor from './components/SecurityInterceptor';
-import { CombatOverlay } from './components/CombatOverlay'; 
+import { CombatOverlay } from './components/CombatOverlay';
+import StickConfigurator from './components/StickConfigurator'; 
 import { DEFAULT_PROFILES } from './constants';
 import { Profile, Mapping, ControllerButton, AccessibilitySettings, AxisMapping, ControllerAxis } from './types';
 import { 
@@ -26,8 +26,8 @@ const Dashboard: React.FC<{
   updateMapping: (btn: ControllerButton, updates: Partial<Mapping>) => void,
   updateAxisMapping: (axis: string, updates: Partial<AxisMapping>) => void,
 }> = ({ profiles, activeProfile, setActiveProfileId, updateActiveProfile, updateMapping, updateAxisMapping }) => {
-  const { state, isKernelActive, setKernelActive } = useGamepad();
-  const [activeTab, setActiveTab] = useState<'eng' | 'stk' | 'tel' | 'tst' | 'ker' | 'hlp' | 'ai' | 'sec'>('eng');
+  const { state, isKernelActive, setKernelActive, connectHID } = useGamepad();
+  const [activeTab, setActiveTab] = useState<'eng' | 'stk' | 'tel' | 'tst' | 'ker' | 'hlp' | 'sec'>('eng');
   const [selectedButton, setSelectedButton] = useState<ControllerButton | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>('aim');
 
@@ -44,10 +44,16 @@ const Dashboard: React.FC<{
           <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">1Man1Machine // Hernan H Edition</span>
         </div>
         <div className="flex items-center gap-6 no-drag">
-          <div className="flex items-center gap-2.5 px-4 py-1.5 bg-blue-500/10 rounded-full border border-blue-500/20 shadow-inner">
+          <button 
+             onClick={connectHID}
+             className="flex items-center gap-2.5 px-4 py-1.5 bg-blue-500/10 rounded-full border border-blue-500/20 shadow-inner hover:bg-blue-500/20 transition-all cursor-pointer group"
+             title="Click to establish WebHID connection for 1000Hz Polling"
+          >
             <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'} animate-pulse`} />
-            <span className="text-[9px] font-black uppercase text-blue-400 tracking-widest">{state.id ? (state.connected ? 'HID_SYNC_OK' : 'NEURAL_SIM_OK') : 'WAIT_LINK'}</span>
-          </div>
+            <span className={`text-[9px] font-black uppercase tracking-widest group-hover:text-blue-300 transition-colors ${state.connected ? 'text-blue-400' : 'text-slate-500'}`}>
+               {state.id ? (state.connected ? 'HID_SYNC_OK' : 'NEURAL_SIM_OK') : 'CONNECT_HID'}
+            </span>
+          </button>
           <div className="flex items-center gap-2">
              {/* Window Controls (Simulated for Web) */}
             <button onClick={() => window.icoreBridge?.minimize()} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors"><Minus className="w-4 h-4 text-slate-600" /></button>
@@ -76,7 +82,6 @@ const Dashboard: React.FC<{
                { id: 'stk', label: 'Stacks', icon: Layers },
                { id: 'tel', label: 'Analytics', icon: Activity },
                { id: 'tst', label: 'Testing Hub', icon: Zap },
-               { id: 'ai', label: 'Neural AI', icon: BrainCircuit },
                { id: 'sec', label: 'Security', icon: ShieldCheck },
                { id: 'hlp', label: 'Guide', icon: HelpCircle },
              ].map(item => (
@@ -251,32 +256,8 @@ const Dashboard: React.FC<{
                     </div>
                  </div>
 
-                 {/* Axis Config */}
-                 <div className="glass p-10 rounded-[3.5rem] border border-white/5 shadow-2xl space-y-10">
-                    <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3"><Layout className="w-4 h-4" /> Stick Mapping Matrix</h3>
-                    <div className="grid grid-cols-2 gap-8">
-                       {['LEFT_STICK_X', 'RIGHT_STICK_X'].map(axisKey => {
-                          const mapping = activeProfile.axisMappings.find(a => a.axis === axisKey as ControllerAxis);
-                          const isLeft = axisKey === 'LEFT_STICK_X';
-                          return (
-                             <div key={axisKey} className="space-y-6">
-                                <div className="flex items-center gap-4">
-                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isLeft ? 'bg-blue-600/20 text-blue-400' : 'bg-purple-600/20 text-purple-400'}`}>
-                                      {isLeft ? <Layout className="w-5 h-5" /> : <MousePointer2 className="w-5 h-5" />}
-                                   </div>
-                                   <span className="text-[11px] font-black text-white uppercase tracking-widest">{isLeft ? 'Left Stick' : 'Right Stick'}</span>
-                                </div>
-                                <select value={mapping?.mappedTo || 'NONE'} onChange={(e) => updateAxisMapping(axisKey, { mappedTo: e.target.value as any })} className="w-full bg-slate-950 border border-white/10 p-4 rounded-2xl font-black text-[10px] text-white uppercase focus:border-blue-500 transition-all">
-                                   <option value="NONE">Disabled</option>
-                                   <option value="WASD">WASD Keyboard</option>
-                                   <option value="MOUSE_MOVEMENT">Mouse Emulation</option>
-                                   <option value="SCROLL">Scroll Wheel</option>
-                                </select>
-                             </div>
-                          )
-                       })}
-                    </div>
-                 </div>
+                 {/* Axis Config - Replaced with StickConfigurator */}
+                 <StickConfigurator profile={activeProfile} updateAxisMapping={updateAxisMapping} />
 
                  {/* Mapping List */}
                  <div className="glass p-10 rounded-[3.5rem] shadow-2xl border-white/5">
@@ -287,7 +268,6 @@ const Dashboard: React.FC<{
            )}
 
            {/* Other Views */}
-           {activeTab === 'ai' && <NeuralConsultant />}
            {activeTab === 'tel' && <AnalyticsView />}
            {activeTab === 'tst' && <TestingView profile={activeProfile} />}
            {activeTab === 'sec' && <SecurityInterceptor />}

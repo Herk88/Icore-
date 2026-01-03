@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload } from 'lucide-react';
+import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload, Trash2 } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 // Verified Mirrors for YOLOv8n Web Model
@@ -19,6 +19,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const { setAiTarget, state } = useGamepad();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isMounted = useRef(true);
   
   // Offscreen canvas for fast pixel reading (Performance Optimization)
   const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,6 +49,8 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     canvas.width = 50; // Low res for fast analysis
     canvas.height = 50;
     analysisCanvasRef.current = canvas;
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
   }, []);
 
   const convertCenterToCorners = useCallback((boxes: tf.Tensor) => {
@@ -134,7 +137,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       .filter(i => i !== -1);
 
     if (personIndices.length === 0) {
-      setCaptureStats(prev => ({...prev, lastReason: 'SKIP: No targets'}));
+      if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: No targets'}));
       return; 
     }
 
@@ -143,7 +146,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     const probability = hasLowConfidence ? config.probLowConfidence : config.probHighConfidence;
 
     if (Math.random() > probability) {
-       setCaptureStats(prev => ({...prev, lastReason: `SKIP: RNG (${(probability * 100).toFixed(0)}%)`}));
+       if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: `SKIP: RNG (${(probability * 100).toFixed(0)}%)`}));
        return;
     }
 
@@ -151,13 +154,13 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     const quality = calculateImageQualityFast(canvasRef.current);
     
     if (quality.brightness < config.minBrightness) {
-      setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Dark'}));
+      if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Dark'}));
       return;
     }
     
     // Sharpness check (Threshold adjusted for downsampled image, approx 50 is good for thumbnail)
     if (quality.sharpness < (config.minSharpness * 0.5)) { 
-       setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Blurry'}));
+       if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Blurry'}));
        return;
     }
 
@@ -191,21 +194,23 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
         filename: filename
       });
       
-      if (result.success) {
-        setCaptureStats(prev => ({
-          total: prev.total + 1,
-          lastReason: 'CAPTURED',
-          storageUsage: Math.min(100, (prev.total + 1) / 10)
-        }));
-      } else {
-        setCaptureStats(prev => ({...prev, lastReason: `ERR: ${result.reason}`}));
+      if (isMounted.current) {
+        if (result.success) {
+          setCaptureStats(prev => ({
+            total: prev.total + 1,
+            lastReason: 'CAPTURED',
+            storageUsage: Math.min(100, (prev.total + 1) / 10)
+          }));
+        } else {
+          setCaptureStats(prev => ({...prev, lastReason: `ERR: ${result.reason}`}));
+        }
       }
     }
   };
 
   const startStream = async (mode: 'SCREEN' | 'CAMERA') => {
     try {
-      setError(null);
+      if (isMounted.current) setError(null);
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       }
@@ -229,54 +234,89 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(() => {});
       }
-      setSourceMode(mode);
+      if (isMounted.current) setSourceMode(mode);
     } catch (err) {
       console.error("[NEURAL] Stream failed:", err);
-      setError("STREAM_FAIL: Check Permissions or Device Connection");
-      setLoading(false);
+      if (isMounted.current) {
+        setError("STREAM_FAIL: Check Permissions or Device Connection");
+        setLoading(false);
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 
   const downloadAndInstallModel = async () => {
-      setNeedsDownload(false);
-      setLoading(true);
-      setError(null);
+      if (isMounted.current) {
+        setNeedsDownload(false);
+        setLoading(true);
+        setError(null);
+      }
       
       const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
 
+      // Clean up previous attempts
+      try {
+        await tf.io.removeModel(localModelPath);
+      } catch (e) { /* ignore */ }
+
       for (let i = 0; i < MODEL_MIRRORS.length; i++) {
+        if (!isMounted.current) return;
+        
         const url = MODEL_MIRRORS[i];
         try {
           setActiveMirrorIndex(i);
-          setLoadingMessage(`Downloading Assets (Mirror ${i + 1})...`);
+          setLoadingMessage(`Connecting to Mirror ${i + 1}...`);
           
-          const loadedModel = await tf.loadGraphModel(url);
+          // Use a timestamp to bust cache if needed
+          const fetchUrl = `${url}?t=${Date.now()}`;
+          const loadedModel = await tf.loadGraphModel(fetchUrl, {
+             onProgress: (p) => {
+               if (isMounted.current) setLoadingMessage(`Downloading Data: ${(p * 100).toFixed(0)}%`);
+             }
+          });
           
-          setLoadingMessage('Verifying Neural Integrity...');
+          if (isMounted.current) setLoadingMessage('Verifying Neural Integrity...');
           // Warmup inference to check model validity
           tf.tidy(() => loadedModel.predict(tf.zeros([1, 640, 640, 3])));
 
-          setLoadingMessage('Installing to Local Storage...');
-          await loadedModel.save(localModelPath);
-          console.log(`[NEURAL] Model successfully installed from Mirror ${i + 1}`);
+          if (isMounted.current) setLoadingMessage('Installing to Local Storage...');
+          try {
+            await loadedModel.save(localModelPath);
+            if (isMounted.current) setIsModelCached(true);
+            console.log(`[NEURAL] Model successfully installed from Mirror ${i + 1}`);
+          } catch (saveError) {
+             console.warn("[NEURAL] Local storage failed (IndexedDB access denied?), using memory-only model.", saveError);
+             if (isMounted.current) setIsModelCached(false);
+          }
           
-          setModel(loadedModel);
-          setIsModelCached(true);
-          setLoading(false);
+          if (isMounted.current) {
+            setModel(loadedModel);
+            setLoading(false);
+          }
           return;
         } catch (err) {
           console.warn(`[NEURAL] Mirror ${i + 1} download failed:`, err);
         }
       }
 
-      setError("INSTALL_FAIL: Unable to download model from any mirror.");
-      setLoading(false);
+      if (isMounted.current) {
+        setError("INSTALL_FAIL: Unable to download model from any mirror. Check Network.");
+        setLoading(false);
+        setNeedsDownload(true);
+      }
+  };
+
+  const clearCacheAndRetry = async () => {
+    try {
+       await tf.io.removeModel(`indexeddb://yolo-nano-m1m-cache`);
+    } catch (e) { /* ignore */ }
+    window.location.reload();
   };
 
   useEffect(() => {
     const checkCacheAndInit = async () => {
+      if (!isMounted.current) return;
       setLoading(true);
       setLoadingMessage('Checking Local VRAM...');
       setModel(null); 
@@ -284,12 +324,26 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       setNeedsDownload(false);
       
       try {
-        await tf.ready();
+        // Race condition timeout for tf.ready()
+        await Promise.race([
+            tf.ready(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('TFJS_TIMEOUT')), 5000))
+        ]);
+
         if (tf.getBackend() !== 'webgl') {
-          await tf.setBackend('webgl').catch(() => console.warn('WebGL backend not available, using cpu'));
+          // Attempt to force WebGL, fallback to CPU if needed
+          await tf.setBackend('webgl').catch(async () => {
+             console.warn('WebGL backend not available, falling back to CPU');
+             await tf.setBackend('cpu');
+          });
         }
       } catch (e) {
-        console.warn('TensorFlow backend initialization warning:', e);
+        console.warn('TensorFlow backend initialization error:', e);
+        if (isMounted.current) {
+           setError("NEURAL_INIT_TIMEOUT: WebGL Backend Unresponsive. Check Hardware Acceleration.");
+           setLoading(false);
+        }
+        return;
       }
 
       const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
@@ -298,14 +352,22 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       try {
         const loadedModel = await tf.loadGraphModel(localModelPath);
         console.log('[NEURAL] Model loaded from IndexedDB cache');
-        setModel(loadedModel);
-        setIsModelCached(true);
-        setLoading(false);
+        
+        // Quick verify
+        tf.tidy(() => loadedModel.predict(tf.zeros([1, 640, 640, 3])));
+        
+        if (isMounted.current) {
+          setModel(loadedModel);
+          setIsModelCached(true);
+          setLoading(false);
+        }
       } catch (e) {
-        console.log('[NEURAL] Cache miss. Download required.');
-        setIsModelCached(false);
-        setNeedsDownload(true);
-        setLoading(false);
+        console.log('[NEURAL] Cache miss or invalid. Download required.');
+        if (isMounted.current) {
+          setIsModelCached(false);
+          setNeedsDownload(true);
+          setLoading(false);
+        }
       }
     };
 
@@ -485,7 +547,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                 )}
                 {!isModelCached && !error && !loading && !needsDownload && (
                    <div className="flex items-center gap-1 text-[8px] text-blue-500/60 font-black tracking-widest uppercase">
-                    <Wifi className="w-3 h-3" /> Mirror {activeMirrorIndex + 1}
+                    <Wifi className="w-3 h-3" /> RAM_Stream
                   </div>
                 )}
               </div>
@@ -502,7 +564,10 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                 <div className="text-center space-y-4">
                     <ServerCrash className="w-12 h-12 text-red-500 mx-auto" />
                     <p className="text-red-500 font-black uppercase tracking-widest max-w-sm mx-auto">{error}</p>
-                    <button onClick={downloadAndInstallModel} className="px-6 py-2 bg-slate-800 rounded-full text-[10px] font-black uppercase text-white hover:bg-slate-700 transition-colors">Retry Installation</button>
+                    <div className="flex gap-4 justify-center">
+                      <button onClick={downloadAndInstallModel} className="px-6 py-2 bg-slate-800 rounded-full text-[10px] font-black uppercase text-white hover:bg-slate-700 transition-colors">Retry Installation</button>
+                      <button onClick={clearCacheAndRetry} className="px-6 py-2 bg-red-900/50 rounded-full text-[10px] font-black uppercase text-red-400 hover:bg-red-900 transition-colors">Force Reset</button>
+                    </div>
                 </div>
             </div>
         )}

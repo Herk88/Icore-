@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
  */
 
 const ICORE_API = {
-  version: "3.2.0-STABLE",
+  version: "3.5.0-STABLE",
   
   // Window Controls
   minimize: () => ipcRenderer.send('window-minimize'),
@@ -16,6 +16,9 @@ const ICORE_API = {
 
   // Process Info
   getRunningProcesses: () => ipcRenderer.invoke('get-processes'),
+
+  // Logs
+  openLogsFolder: () => ipcRenderer.invoke('open-logs'),
 
   // OS-Level Input Injection
   sendKeyEvent: (args: { keyCode: string; type: 'keydown' | 'keyup' }) => {
@@ -27,6 +30,9 @@ const ICORE_API = {
   sendMouseButtonEvent: (args: { button: 'left' | 'middle' | 'right'; type: 'mousedown' | 'mouseup' }) => {
     ipcRenderer.send('send-mouse-button-event', args);
   },
+  
+  // Critical Safety
+  emergencyReset: () => ipcRenderer.send('emergency-reset'),
   
   // File System Access for Training Data
   saveTrainingData: (data: any) => ipcRenderer.invoke('save-training-data', data),
