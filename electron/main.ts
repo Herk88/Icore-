@@ -1,4 +1,3 @@
-
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -6,6 +5,9 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Buffer } from 'buffer';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 // --- NUT.JS INPUT ENGINE ---
 // Use require to ensure compatibility with CommonJS compilation in Electron

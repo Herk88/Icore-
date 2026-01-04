@@ -1,8 +1,7 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload, Trash2 } from 'lucide-react';
+import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload, Trash2, ChevronDown, FolderOpen, FileCode, Terminal } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 // Verified Mirrors for YOLOv8n Web Model
@@ -19,6 +18,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const { setAiTarget, state } = useGamepad();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   
   // Offscreen canvas for fast pixel reading (Performance Optimization)
@@ -217,6 +217,8 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
       let stream: MediaStream;
       if (mode === 'SCREEN') {
+        // This will invoke the standard browser/OS picker allowing 
+        // Window, Entire Screen, or Browser Tab selection
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: { ideal: 60 } },
           audio: false
@@ -243,6 +245,65 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       }
     } finally {
       if (isMounted.current) setLoading(false);
+    }
+  };
+
+  const handleLocalFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+        if (isMounted.current) {
+            setLoading(true);
+            setLoadingMessage('Analyzing Neural Architecture...');
+        }
+        try {
+            const files: File[] = Array.from(event.target.files);
+
+            // COMPATIBILITY CHECK: Native YOLO Files (.pt / .onnx)
+            const nativeFiles = files.filter(f => 
+                f.name.toLowerCase().endsWith('.pt') || 
+                f.name.toLowerCase().endsWith('.yaml') || 
+                f.name.toLowerCase().endsWith('.onnx')
+            );
+            
+            if (nativeFiles.length > 0) {
+                // We handle this gracefully - User wants to test support
+                if (isMounted.current) {
+                    setLoading(false);
+                    // Instead of crashing, we show a diagnostic warning
+                    setError(`NATIVE_DETECTED: ${nativeFiles[0].name} loaded. Browser inference requires TFJS format.`);
+                    return;
+                }
+            }
+
+            // COMPLETENESS CHECK: Ensure model topology (.json) and weights (.bin) are present
+            const hasJson = files.some(f => f.name.toLowerCase().endsWith('.json'));
+            const hasBin = files.some(f => f.name.toLowerCase().endsWith('.bin'));
+
+            if (!hasJson || !hasBin) {
+                throw new Error("INCOMPLETE_MODEL: Selection must include 'model.json' AND weight files (.bin) together.");
+            }
+
+            // TFJS requires the model.json and the binary weights passed together as a set of files
+            const model = await tf.loadGraphModel(tf.io.browserFiles(files));
+            
+            // Warmup
+            if (isMounted.current) setLoadingMessage('Verifying Neural Integrity...');
+            tf.tidy(() => model.predict(tf.zeros([1, 640, 640, 3])));
+            
+            if (isMounted.current) {
+                setModel(model);
+                setLoading(false);
+                setNeedsDownload(false);
+                setError(null);
+                setIsModelCached(false); // Local models aren't auto-cached to IDB here for simplicity
+            }
+        } catch (err: any) {
+            console.error("Local Load Error:", err);
+            if (isMounted.current) {
+                const errorMessage = err.message || "LOCAL_LOAD_FAIL: Invalid Model Files (Select .json and .bin)";
+                setError(errorMessage);
+                setLoading(false);
+            }
+        }
     }
   };
 
@@ -538,7 +599,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
               <p className="text-[16px] font-black text-white uppercase tracking-[0.6em]">NEURAL_INTERCEPT</p>
               <div className="flex items-center gap-3">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">
-                  {error ? 'SIGNAL_LOST' : needsDownload ? 'INSTALL_REQ' : sourceMode} | {fps}FPS | {inferenceTime}MS
+                  {error ? 'DIAGNOSTIC_MODE' : needsDownload ? 'INSTALL_REQ' : sourceMode} | {fps}FPS | {inferenceTime}MS
                 </p>
                 {isModelCached && (
                   <div className="flex items-center gap-1 text-[8px] text-green-500/60 font-black tracking-widest uppercase">
@@ -554,19 +615,59 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
             </div>
           </div>
           <div className="flex gap-4 pointer-events-auto">
-             <button onClick={() => startStream('SCREEN')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'SCREEN' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Monitor className="w-6 h-6" /></button>
+             <button 
+                onClick={() => startStream('SCREEN')} 
+                className={`p-4 rounded-2xl border transition-all ${sourceMode === 'SCREEN' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}
+                title="Capture Any Window or Screen"
+             >
+                <Monitor className="w-6 h-6" />
+             </button>
              <button onClick={() => startStream('CAMERA')} className={`p-4 rounded-2xl border transition-all ${sourceMode === 'CAMERA' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}><Camera className="w-6 h-6" /></button>
           </div>
         </div>
 
         {error && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-30">
-                <div className="text-center space-y-4">
-                    <ServerCrash className="w-12 h-12 text-red-500 mx-auto" />
-                    <p className="text-red-500 font-black uppercase tracking-widest max-w-sm mx-auto">{error}</p>
+                <div className="text-center space-y-6 px-8 max-w-2xl">
+                    <div className="flex justify-center">
+                        {error.includes("NATIVE_DETECTED") ? (
+                            <FileCode className="w-16 h-16 text-yellow-500 animate-pulse" />
+                        ) : (
+                            <ServerCrash className="w-16 h-16 text-red-500" />
+                        )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <h3 className={`text-2xl font-black uppercase tracking-tighter ${error.includes("NATIVE_DETECTED") ? "text-yellow-500" : "text-red-500"}`}>
+                            {error.includes("NATIVE_DETECTED") ? "Diagnostic Mode Active" : "Neural Link Failure"}
+                        </h3>
+                        <p className="text-slate-400 font-bold uppercase tracking-widest leading-relaxed text-xs">
+                            {error}
+                        </p>
+                    </div>
+
+                    {error.includes("NATIVE_DETECTED") && (
+                        <div className="bg-slate-950/80 p-6 rounded-2xl border border-white/10 text-left space-y-4">
+                            <div className="flex items-center gap-2 text-blue-400">
+                                <Terminal className="w-4 h-4" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Required Conversion Command</span>
+                            </div>
+                            <code className="block bg-black p-4 rounded-lg text-green-400 font-mono text-[10px] select-all cursor-text">
+                                yolo export model=yolov8n.pt format=tfjs
+                            </code>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold">
+                                Run this in your Python environment to generate the compatible 'model.json' + binary shards.
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex gap-4 justify-center">
-                      <button onClick={downloadAndInstallModel} className="px-6 py-2 bg-slate-800 rounded-full text-[10px] font-black uppercase text-white hover:bg-slate-700 transition-colors">Retry Installation</button>
-                      <button onClick={clearCacheAndRetry} className="px-6 py-2 bg-red-900/50 rounded-full text-[10px] font-black uppercase text-red-400 hover:bg-red-900 transition-colors">Force Reset</button>
+                      <button onClick={downloadAndInstallModel} className="px-6 py-3 bg-slate-800 rounded-full text-[10px] font-black uppercase text-white hover:bg-slate-700 transition-colors border border-white/5">
+                        Download Standard Model
+                      </button>
+                      <button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-blue-600 rounded-full text-[10px] font-black uppercase text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-600/30">
+                        Select Different File
+                      </button>
                     </div>
                 </div>
             </div>
@@ -581,16 +682,44 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                     <div className="space-y-2">
                         <h3 className="text-xl font-black text-white uppercase tracking-tighter">Neural Core Required</h3>
                         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest leading-relaxed">
-                            YOLOv8n model must be downloaded and stored locally for offline neural tracking.
+                            A YOLOv8n detection model is required to enable visual sign blocking and object tracking.
                         </p>
                     </div>
-                    <button 
-                        onClick={downloadAndInstallModel}
-                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-[0.2em] transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3"
-                    >
-                        <Download className="w-4 h-4" /> Install Neural Matrix
-                    </button>
-                    <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest">Est. Size: ~6.2 MB • Persistent Storage</p>
+                    
+                    {/* DROPDOWN MENU FOR MODEL LOADING */}
+                    <div className="relative w-full pointer-events-auto">
+                        <select 
+                            className="w-full bg-slate-900 border border-white/20 rounded-2xl p-4 text-white appearance-none cursor-pointer font-black uppercase tracking-widest text-[10px] hover:border-blue-500/50 transition-colors focus:outline-none focus:border-blue-500"
+                            onChange={(e) => {
+                                if (e.target.value === 'local') {
+                                    fileInputRef.current?.click();
+                                    e.target.value = 'default'; // Reset
+                                } else if (e.target.value === 'cloud') {
+                                    downloadAndInstallModel();
+                                }
+                            }}
+                            defaultValue="default"
+                        >
+                            <option value="default" disabled>Select Neural Source...</option>
+                            <option value="cloud">☁️ Download Official YOLOv8n (6MB)</option>
+                            <option value="local">📂 Load Local Model (Supports .json, .pt, .onnx)</option>
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                            <ChevronDown className="w-4 h-4" />
+                        </div>
+                    </div>
+
+                    {/* Hidden File Input for Local Loading */}
+                    <input 
+                        type="file" 
+                        multiple 
+                        accept=".json,.bin,.pt,.onnx,.yaml" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        onChange={handleLocalFileSelect} 
+                    />
+
+                    <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest">Supports TFJS Graph Models</p>
                 </div>
             </div>
         )}

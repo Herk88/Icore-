@@ -1,7 +1,16 @@
 
 /**
- * 1Man1Machine HID Service (Kernel Simulation)
- * Handles high-frequency polling and logic in an isolated process.
+ * ⚠️ ARCHITECTURAL STUB - NOT ACTIVE IN v3.5.0 ⚠️
+ * 
+ * 1Man1Machine HID Service (Native Interface)
+ * This is a forward-looking scaffold for the v4.0 Native Backend.
+ * 
+ * In v3.5.0 (Hybrid Architecture), input reading is handled exclusively 
+ * by the WebHID bridge in the Renderer process (GamepadProvider.tsx).
+ * 
+ * This file is NOT imported by electron/main.ts and will not execute.
+ * It is preserved here to guide the migration to 'node-hid' for 
+ * system-wide background polling in future releases.
  */
 
 export class HIDKernel {

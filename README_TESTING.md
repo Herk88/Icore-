@@ -1,39 +1,35 @@
 
-# 1Man1Machine Testing Directive
+# 1Man1Machine Testing Directive (Hybrid Build)
 
 ## Phase 1: Installation & Setup
-1.  **Extract the ZIP**: If using the portable build, extract all files to a local folder (e.g., Desktop). Do not run from inside the ZIP.
-2.  **Run the Executable**: Launch `1Man1Machine.exe`.
-3.  **Security Prompt**: Windows may flag the app as "Unrecognized". Click **More Info -> Run Anyway** (this is normal for unsigned independent software).
+1.  **Extract/Install**: Run `1Man1Machine Setup 3.5.0.exe` or extract the portable ZIP.
+2.  **Prerequisites**: Ensure **Visual C++ Redistributable 2015-2022** is installed.
+3.  **Run**: Launch `1Man1Machine.exe`.
+4.  **Security**: If prompted by Windows SmartScreen, click **More Info -> Run Anyway**.
 
-## Phase 2: Hardware Link
-1.  **Plug in DualSense**: Connect via USB-C.
-2.  **Check Status**: Look at the top-right of the dashboard window.
-    *   **RED PULSE**: Controller not found.
-    *   **GREEN PULSE**: `HID_SYNC_OK`.
-3.  **Manual Sync**: If RED, click the status badge. A browser-style popup may appear. Select "Wireless Controller" and click "Connect".
+## Phase 2: Hardware Handshake
+1.  **Connect**: Plug in DualSense via USB-C.
+2.  **Link**: Click the **"CONNECT_HID"** button in the top right dashboard.
+3.  **Select**: Choose **"Wireless Controller"** from the browser popup.
+4.  **Verify**: Top-right status changes to `HID_SYNC_OK` (Green Pulse).
 
-## Phase 3: Validation Testing
-**Test A: Input Recognition**
-1.  Navigate to the **Console** tab.
-2.  Press buttons on your physical controller.
-3.  Verify the on-screen 3D controller highlights the corresponding buttons in Blue.
+## Phase 3: Functional Smoke Test
+**1. Notepad Injection Test**
+*   Open Windows Notepad.
+*   Press **CROSS** on controller.
+*   **Pass**: A space character is typed.
 
-**Test B: Stick Mapping**
-1.  Move the Left Stick. Verify the on-screen Left Stick moves.
-2.  Move the Right Stick. Verify the on-screen Right Stick moves.
-3.  Go to **Stacks** -> **Universal Native** (Default Profile).
-4.  Verify moving the Right Stick moves your Windows Mouse Cursor.
+**2. Mouse Movement Test**
+*   Move **Right Stick**.
+*   **Pass**: Mouse cursor moves on screen.
+*   Press **R2**.
+*   **Pass**: Left click is registered.
 
-**Test C: Emergency Reset**
-1.  Press **L2** (Mapped to Right Click toggle). If it gets stuck or behaves unexpectedly:
-2.  **HOLD L1 + R1 + SHARE** simultaneously.
-3.  Verify all inputs stop immediately.
+**3. Emergency Reset (Safety)**
+*   **Hold CROSS** (typing spaces continuously).
+*   **Hold L1 + R1 + SHARE** simultaneously.
+*   **Pass**: Input stops immediately. All keys released.
 
-## Phase 4: Troubleshooting
-**Logs**:
-*   Go to **Analytics** tab.
-*   Click **View System Logs**.
-*   A folder will open containing `.log` files. Attach these if reporting bugs.
-
-**Known Issue**: Input Injection requires the app to be run as Administrator for some games (Valorant, COD) due to anti-cheat protections.
+## Phase 4: Final Check
+*   Close the application.
+*   Verify no "stuck" keys (e.g., keyboard isn't still typing spaces).

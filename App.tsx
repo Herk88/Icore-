@@ -51,7 +51,7 @@ const Dashboard: React.FC<{
           >
             <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'} animate-pulse`} />
             <span className={`text-[9px] font-black uppercase tracking-widest group-hover:text-blue-300 transition-colors ${state.connected ? 'text-blue-400' : 'text-slate-500'}`}>
-               {state.id ? (state.connected ? 'HID_SYNC_OK' : 'NEURAL_SIM_OK') : 'CONNECT_HID'}
+               {state.id ? (state.connected ? 'HID_SYNC_OK' : 'NEURAL_READY') : 'CONNECT_HID'}
             </span>
           </button>
           <div className="flex items-center gap-2">
