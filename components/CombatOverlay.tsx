@@ -1,17 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { BrainCircuit, Camera, Monitor, Zap, Gauge } from 'lucide-react';
+import { BrainCircuit, Loader2, Monitor, Camera, HardDrive, Wifi, CloudDownload, Check, FileCode, ServerCrash, ChevronDown, Database, Scan, Terminal } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 const MODEL_MIRRORS = ['https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json'];
 
-interface CombatOverlayProps {
-  profile: Profile;
-  onUpdateProfile?: (updates: Partial<Profile>) => void;
-}
-
-export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateProfile }) => {
+export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const { setAiTarget } = useGamepad();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,6 +17,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
 
   const [model, setModel] = useState<tf.GraphModel | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Initializing Neural Core...');
   const [needsDownload, setNeedsDownload] = useState(false);
   const [inferenceTime, setInferenceTime] = useState(0);
   const [fps, setFps] = useState(0);
@@ -32,10 +28,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
   const requestRef = useRef<number | undefined>(undefined);
   const lastInferenceRef = useRef<number>(0);
   const isInferringRef = useRef(false);
-
-  // Sticky Targeting State
-  const lastTargetRef = useRef<{x: number, y: number} | null>(null);
-  const lastTargetTimeRef = useRef<number>(0);
 
   useEffect(() => {
     const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50; analysisCanvasRef.current = canvas;
@@ -59,9 +51,9 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
     if (event.target.files && event.target.files.length > 0) {
         setLoading(true);
         try {
-            const files = Array.from(event.target.files) as File[];
-            const hasJson = files.some(f => f.name.toLowerCase().endsWith('.json'));
-            const hasBin = files.some(f => f.name.toLowerCase().endsWith('.bin'));
+            const files = Array.from(event.target.files);
+            const hasJson = files.some((f: any) => f.name.toLowerCase().endsWith('.json'));
+            const hasBin = files.some((f: any) => f.name.toLowerCase().endsWith('.bin'));
             if (!hasJson || !hasBin) throw new Error("Selection must include 'model.json' AND weight files.");
             const model = await tf.loadGraphModel(tf.io.browserFiles(files));
             setModel(model);
@@ -93,6 +85,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       try {
         await tf.ready();
         await tf.setBackend('webgl');
+        // Auto-download logic omitted for brevity in installer, assumes manual selection if cache fails
         setNeedsDownload(true);
         setLoading(false);
       } catch (e) { console.error(e); }
@@ -113,62 +106,39 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                const detections = currentDetectionsRef.current;
                
                let bestTarget = null;
-               let bestScore = -Infinity;
+               let bestDist = Infinity;
                let lockedIndex = -1;
 
-               const now = performance.now();
-               
-               // HYSTERESIS LOGIC:
-               // Check if we have a valid history target from < 600ms ago (short memory)
-               const hasHistory = lastTargetRef.current && (now - lastTargetTimeRef.current < 600);
-
+               // Pass 1: Identify best target (closest to center with high confidence)
                detections.boxes.forEach((box, i) => {
-                  if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
+                  const score = detections.scores[i];
+                  const threshold = profile.accessibility.yoloConfidence || 0.5;
+                  
+                  if (score < threshold) return;
+
                   const [cx, cy] = box;
-                  // Normalized center coordinates (0-1)
-                  const nx = cx / 640;
-                  const ny = cy / 640;
+                  // Normalized distance from center (0.5, 0.5)
+                  const dist = Math.sqrt(Math.pow((cx/640)-0.5, 2) + Math.pow((cy/640)-0.5, 2));
                   
-                  // 1. Centrality Score: Proximity to crosshair (0.5, 0.5)
-                  // Lower distance = Higher Base Score
-                  const distToCenter = Math.sqrt(Math.pow(nx - 0.5, 2) + Math.pow(ny - 0.5, 2));
-                  
-                  let historyBonus = 0;
-                  if (hasHistory && lastTargetRef.current) {
-                      // 2. Consistency Score: Proximity to previous target
-                      const distToHistory = Math.sqrt(Math.pow(nx - lastTargetRef.current.x, 2) + Math.pow(ny - lastTargetRef.current.y, 2));
-                      
-                      // If this candidate is within 15% screen distance of the last locked target, boost it significantly.
-                      // This makes the lock "sticky".
-                      if (distToHistory < 0.15) {
-                          historyBonus = 0.4; // Strong sticky bias
-                      }
-                  }
-
-                  // Final Score Algorithm: (Inverted Distance) + Bonus
-                  const score = (1.0 - distToCenter) + historyBonus;
-
-                  if (score > bestScore) {
-                      bestScore = score;
-                      bestTarget = { x: nx, y: ny };
+                  if (dist < bestDist) {
+                      bestDist = dist;
+                      bestTarget = { x: cx/640, y: cy/640 };
                       lockedIndex = i;
                   }
                });
 
-               // Update history if we found a valid target
-               if (bestTarget) {
-                   lastTargetRef.current = bestTarget;
-                   lastTargetTimeRef.current = now;
-               }
-
                setAiTarget(bestTarget);
 
-               // Rendering Logic
+               // Pass 2: Draw indicators
                detections.boxes.forEach((box, i) => {
-                  if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
+                  const score = detections.scores[i];
+                  const threshold = profile.accessibility.yoloConfidence || 0.5;
+                  
+                  if (score < threshold) return;
                   
                   const [cx, cy, w, h] = box;
-                  // Convert model coords (640x640) to canvas coords
+                  
+                  // Scale to canvas dimensions
                   const x1 = (cx - w / 2) * (canvas.width / 640);
                   const y1 = (cy - h / 2) * (canvas.height / 640);
                   const rw = w * (canvas.width / 640);
@@ -181,30 +151,19 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                       ctx.strokeStyle = '#06b6d4';
                       ctx.lineWidth = 3;
                       ctx.strokeRect(x1, y1, rw, rh);
-                      ctx.shadowBlur = 0;
-
-                      // Score Label
-                      const score = (detections.scores[i] * 100).toFixed(0);
-                      ctx.fillStyle = '#06b6d4';
-                      const label = `LOCKED ${score}%`;
-                      const textMetrics = ctx.measureText(label);
-                      const bgWidth = textMetrics.width + 12;
                       
-                      ctx.fillRect(x1, y1 - 22, bgWidth, 22);
-                      ctx.fillStyle = '#000';
+                      // Score Label
+                      ctx.shadowBlur = 0;
+                      ctx.fillStyle = '#06b6d4';
+                      const label = `LOCKED ${(score * 100).toFixed(0)}%`;
                       ctx.font = 'bold 12px monospace';
-                      ctx.fillText(label, x1 + 6, y1 - 6);
-
-                      // Vector Line to Center (Visualizing the "Pull")
-                      ctx.beginPath();
-                      ctx.moveTo(canvas.width / 2, canvas.height / 2);
-                      ctx.lineTo(x1 + rw / 2, y1 + rh / 2);
-                      ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
-                      ctx.setLineDash([5, 5]); 
-                      ctx.lineWidth = 1;
-                      ctx.stroke();
-                      ctx.setLineDash([]); 
-
+                      const metrics = ctx.measureText(label);
+                      const bgW = metrics.width + 8;
+                      const bgH = 20;
+                      
+                      ctx.fillRect(x1, y1 - bgH, bgW, bgH);
+                      ctx.fillStyle = '#000';
+                      ctx.fillText(label, x1 + 4, y1 - 5);
                   } else if (profile.accessibility.visualIndicatorsEnabled) {
                       // Candidate Visuals
                       ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // Faint Red
@@ -252,7 +211,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
     };
     detect();
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [model, profile.accessibility.yoloEnabled, profile.accessibility.visualIndicatorsEnabled, profile.accessibility.yoloConfidence]);
+  }, [model, profile.accessibility.yoloEnabled]);
 
   const startStream = async (mode: 'SCREEN' | 'CAMERA') => {
     try {
@@ -264,20 +223,8 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
     } catch (e) { setError("Stream Failed"); }
   };
 
-  const updateTurboSettings = (enabled: boolean, rate?: number) => {
-    if (onUpdateProfile) {
-        onUpdateProfile({
-            accessibility: {
-                ...profile.accessibility,
-                rapidFireEnabled: enabled,
-                globalTurboRate: rate ?? profile.accessibility.globalTurboRate
-            }
-        });
-    }
-  };
-
   return (
-    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black group">
+    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black">
       <video ref={videoRef} className="hidden" muted playsInline />
       <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block" />
       <div className="absolute inset-0 pointer-events-none p-10 flex flex-col justify-between z-20">
@@ -288,45 +235,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
              <button onClick={() => startStream('CAMERA')} className="p-4 rounded-2xl bg-slate-900 text-slate-500"><Camera className="w-6 h-6" /></button>
             </div>
         </div>
-
-        {/* FIRE CONTROL HUD (Bottom Left) */}
-        {!loading && !error && (
-            <div className="pointer-events-auto absolute bottom-10 left-10 flex flex-col gap-3 transition-opacity duration-300 opacity-80 hover:opacity-100 bg-slate-950/80 backdrop-blur-md p-4 rounded-[2rem] border border-white/5">
-                <div className="flex items-center gap-3">
-                    <button 
-                        onClick={() => updateTurboSettings(!profile.accessibility.rapidFireEnabled)}
-                        className={`p-3 rounded-xl transition-all ${profile.accessibility.rapidFireEnabled ? 'bg-yellow-500/20 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                        <Zap className="w-5 h-5" />
-                    </button>
-                    <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">Fire Control</p>
-                        <p className={`text-[8px] font-bold uppercase tracking-widest ${profile.accessibility.rapidFireEnabled ? 'text-yellow-500' : 'text-slate-600'}`}>
-                            {profile.accessibility.rapidFireEnabled ? 'RAPID_FIRE [ACTIVE]' : 'MANUAL_MODE'}
-                        </p>
-                    </div>
-                </div>
-                
-                {profile.accessibility.rapidFireEnabled && (
-                    <div className="flex items-center gap-3 px-1 animate-in slide-in-from-left-2">
-                        <Gauge className="w-4 h-4 text-slate-500" />
-                        <div className="flex-1 w-32">
-                             <input 
-                                type="range" 
-                                min="5" max="60" step="1"
-                                value={profile.accessibility.globalTurboRate}
-                                onChange={(e) => updateTurboSettings(true, parseInt(e.target.value))}
-                                className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer accent-yellow-500"
-                             />
-                        </div>
-                        <span className="text-[9px] font-mono font-black text-yellow-500 w-8 text-right">
-                            {profile.accessibility.globalTurboRate}Hz
-                        </span>
-                    </div>
-                )}
-            </div>
-        )}
-
         {needsDownload && !loading && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-30 pointer-events-auto">
                 <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem]">
