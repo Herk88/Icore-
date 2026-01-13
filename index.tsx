@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -9,13 +8,17 @@ import './index.css';
 const unregisterLegacyServiceWorkers = async () => {
   if ('serviceWorker' in navigator) {
     try {
+      // Ensure document context is valid before attempting
+      if (!document || !document.body) return;
+      
       const registrations = await navigator.serviceWorker.getRegistrations();
       for (const registration of registrations) {
         console.log('Unregistering legacy service worker:', registration);
         registration.unregister();
       }
     } catch (error) {
-      console.warn('Service Worker unregistration failed (non-critical):', error);
+      // Silently fail or log as warning, this is not critical for app function
+      console.warn('Service Worker unregistration skipped:', error);
     }
   }
 };

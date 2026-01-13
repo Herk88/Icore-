@@ -151,9 +151,16 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   const connectHID = async () => {
     try {
       if ('hid' in navigator) {
-        const devices = await (navigator as any).hid.requestDevice({
-          filters: [{ vendorId: 0x054C }, { vendorId: 0x054c }]
-        });
+        // Wrap in try-catch to handle permission policy errors
+        let devices = [];
+        try {
+            devices = await (navigator as any).hid.requestDevice({
+                filters: [{ vendorId: 0x054C }, { vendorId: 0x054c }]
+            });
+        } catch (err) {
+            console.error("HID Permission Blocked:", err);
+            return;
+        }
         
         if (devices.length > 0) {
            const device = devices[0];
@@ -226,16 +233,21 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
     (navigator as any).hid.addEventListener('connect', handleConnect);
     (navigator as any).hid.addEventListener('disconnect', handleDisconnect);
 
-    // Initial Restore Logic
-    (navigator as any).hid.getDevices().then((devices: any[]) => {
-        const sony = devices.find(d => d.vendorId === 0x054C || d.vendorId === 0x054c);
-        if (sony) {
-           console.log("Found Persistent HID Device:", sony.productName);
-           attemptReconnection(sony);
-        }
-    }).catch((err: any) => {
-        console.warn("HID Auto-Restore blocked by policy:", err);
-    });
+    // Initial Restore Logic - safely wrapped
+    try {
+        (navigator as any).hid.getDevices().then((devices: any[]) => {
+            const sony = devices.find(d => d.vendorId === 0x054C || d.vendorId === 0x054c);
+            if (sony) {
+               console.log("Found Persistent HID Device:", sony.productName);
+               attemptReconnection(sony);
+            }
+        }).catch((err: any) => {
+            // Silently fail if policy blocks getDevices
+            console.warn("HID Persistence check failed (Policy restricted):", err.message);
+        });
+    } catch (e) {
+        console.warn("HID getDevices exception:", e);
+    }
 
     return () => {
         (navigator as any).hid.removeEventListener('connect', handleConnect);

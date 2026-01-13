@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { BrainCircuit, Loader2, Monitor, Camera, HardDrive, Wifi, CloudDownload, Check, FileCode, ServerCrash, ChevronDown, Database, Scan, Terminal, Zap, Gauge } from 'lucide-react';
+import { BrainCircuit, Camera, Monitor, Zap, Gauge } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 const MODEL_MIRRORS = ['https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json'];
@@ -22,7 +22,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
 
   const [model, setModel] = useState<tf.GraphModel | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Initializing Neural Core...');
   const [needsDownload, setNeedsDownload] = useState(false);
   const [inferenceTime, setInferenceTime] = useState(0);
   const [fps, setFps] = useState(0);
@@ -34,7 +33,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
   const lastInferenceRef = useRef<number>(0);
   const isInferringRef = useRef(false);
 
-  // Target Hysteresis State (For Sticky Locking)
+  // Sticky Targeting State
   const lastTargetRef = useRef<{x: number, y: number} | null>(null);
   const lastTargetTimeRef = useRef<number>(0);
 
@@ -120,8 +119,8 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                const now = performance.now();
                
                // HYSTERESIS LOGIC:
-               // Check if we have a valid history target from < 800ms ago
-               const hasHistory = lastTargetRef.current && (now - lastTargetTimeRef.current < 800);
+               // Check if we have a valid history target from < 600ms ago (short memory)
+               const hasHistory = lastTargetRef.current && (now - lastTargetTimeRef.current < 600);
 
                detections.boxes.forEach((box, i) => {
                   if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
@@ -140,14 +139,13 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                       const distToHistory = Math.sqrt(Math.pow(nx - lastTargetRef.current.x, 2) + Math.pow(ny - lastTargetRef.current.y, 2));
                       
                       // If this candidate is within 15% screen distance of the last locked target, boost it significantly.
-                      // This makes the lock "sticky", allowing the user to move the crosshair slightly off-target without losing lock.
+                      // This makes the lock "sticky".
                       if (distToHistory < 0.15) {
-                          historyBonus = 0.4; // Strong bias
+                          historyBonus = 0.4; // Strong sticky bias
                       }
                   }
 
                   // Final Score Algorithm: (Inverted Distance) + Bonus
-                  // Maximize this score
                   const score = (1.0 - distToCenter) + historyBonus;
 
                   if (score > bestScore) {
@@ -170,6 +168,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                   if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
                   
                   const [cx, cy, w, h] = box;
+                  // Convert model coords (640x640) to canvas coords
                   const x1 = (cx - w / 2) * (canvas.width / 640);
                   const y1 = (cy - h / 2) * (canvas.height / 640);
                   const rw = w * (canvas.width / 640);
@@ -178,7 +177,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                   if (i === lockedIndex) {
                       // Locked Target Visuals
                       ctx.shadowColor = '#06b6d4'; // Cyan Glow
-                      ctx.shadowBlur = 20;
+                      ctx.shadowBlur = 15;
                       ctx.strokeStyle = '#06b6d4';
                       ctx.lineWidth = 3;
                       ctx.strokeRect(x1, y1, rw, rh);
@@ -200,11 +199,11 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                       ctx.beginPath();
                       ctx.moveTo(canvas.width / 2, canvas.height / 2);
                       ctx.lineTo(x1 + rw / 2, y1 + rh / 2);
-                      ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
-                      ctx.setLineDash([5, 5]); // Dashed line for vector
-                      ctx.lineWidth = 2;
+                      ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
+                      ctx.setLineDash([5, 5]); 
+                      ctx.lineWidth = 1;
                       ctx.stroke();
-                      ctx.setLineDash([]); // Reset
+                      ctx.setLineDash([]); 
 
                   } else if (profile.accessibility.visualIndicatorsEnabled) {
                       // Candidate Visuals
