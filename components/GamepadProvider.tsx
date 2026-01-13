@@ -158,48 +158,82 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         if (devices.length > 0) {
            const device = devices[0];
            console.log("HID Device Authorized:", device.productName);
-           if (!device.opened) {
-              await device.open();
+           
+           try {
+               if (!device.opened) {
+                  await device.open();
+               }
+               logicState.current.connected = true;
+               logicState.current.id = device.productName;
+               console.log("HID Link Established Successfully");
+           } catch (openErr) {
+               console.error("HID Open Failed:", openErr);
+               // We set ID so UI shows we have a device, but connected is false (Red LED)
+               logicState.current.id = device.productName;
+               logicState.current.connected = false;
            }
-           logicState.current.connected = true;
-           logicState.current.id = device.productName;
         }
+      } else {
+          console.error("WebHID API not supported in this browser environment.");
       }
     } catch (e) {
-      console.error("HID Connection failed:", e);
+      console.error("HID Connection Request failed:", e);
     }
   };
 
-  // HID Lifecycle Management
+  // HID Lifecycle Management with Auto-Reconnect
   useEffect(() => {
     if (!('hid' in navigator)) return;
 
+    const attemptReconnection = async (device: any) => {
+        console.log("Attempting HID Reconnection for:", device.productName);
+        const maxRetries = 3;
+        
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                if (!device.opened) {
+                    await device.open();
+                }
+                logicState.current.connected = true;
+                logicState.current.id = device.productName;
+                console.log(`HID Reconnected (Attempt ${i + 1})`);
+                return;
+            } catch (e) {
+                console.warn(`Reconnection attempt ${i + 1} failed:`, e);
+                await new Promise(resolve => setTimeout(resolve, 500 * (i + 1))); // Backoff
+            }
+        }
+        
+        console.error("Unable to re-establish HID connection after retries.");
+        logicState.current.connected = false;
+    };
+
     const handleConnect = (e: any) => {
-        console.log("HID Device Connected:", e.device.productName);
-        logicState.current.connected = true;
+        console.log("HID Device Connected Event:", e.device.productName);
+        if (e.device.vendorId === 0x054C || e.device.vendorId === 0x054c) {
+             attemptReconnection(e.device);
+        }
     };
 
     const handleDisconnect = (e: any) => {
-        console.log("HID Device Disconnected:", e.device.productName);
-        logicState.current.connected = false;
+        console.log("HID Device Disconnected Event:", e.device.productName);
+        // Only mark disconnected if it affects our active device
+        if (logicState.current.id === e.device.productName) {
+            logicState.current.connected = false;
+        }
     };
 
     (navigator as any).hid.addEventListener('connect', handleConnect);
     (navigator as any).hid.addEventListener('disconnect', handleDisconnect);
 
-    // Attempt to restore persistent permissions
+    // Initial Restore Logic
     (navigator as any).hid.getDevices().then((devices: any[]) => {
         const sony = devices.find(d => d.vendorId === 0x054C || d.vendorId === 0x054c);
         if (sony) {
-           console.log("Restoring HID Session:", sony.productName);
-           if (!sony.opened) {
-               sony.open().catch((err: any) => console.warn("Failed to open HID:", err));
-           }
-           logicState.current.connected = true;
-           logicState.current.id = sony.productName;
+           console.log("Found Persistent HID Device:", sony.productName);
+           attemptReconnection(sony);
         }
     }).catch((err: any) => {
-        // Suppress errors if policy blocks auto-access (user must manually connect)
         console.warn("HID Auto-Restore blocked by policy:", err);
     });
 

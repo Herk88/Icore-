@@ -34,6 +34,10 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
   const lastInferenceRef = useRef<number>(0);
   const isInferringRef = useRef(false);
 
+  // Target Hysteresis State (For Sticky Locking)
+  const lastTargetRef = useRef<{x: number, y: number} | null>(null);
+  const lastTargetTimeRef = useRef<number>(0);
+
   useEffect(() => {
     const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50; analysisCanvasRef.current = canvas;
     const infCanvas = document.createElement('canvas'); infCanvas.width = 640; infCanvas.height = 640; inferenceCanvasRef.current = infCanvas;
@@ -90,7 +94,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       try {
         await tf.ready();
         await tf.setBackend('webgl');
-        // Auto-download logic omitted for brevity in installer, assumes manual selection if cache fails
         setNeedsDownload(true);
         setLoading(false);
       } catch (e) { console.error(e); }
@@ -109,18 +112,107 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             if (currentDetectionsRef.current) {
                const detections = currentDetectionsRef.current;
-               ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
-               let bestTarget = null; let bestDist = Infinity;
+               
+               let bestTarget = null;
+               let bestScore = -Infinity;
+               let lockedIndex = -1;
+
+               const now = performance.now();
+               
+               // HYSTERESIS LOGIC:
+               // Check if we have a valid history target from < 800ms ago
+               const hasHistory = lastTargetRef.current && (now - lastTargetTimeRef.current < 800);
+
                detections.boxes.forEach((box, i) => {
-                  if (detections.scores[i] < 0.5) return;
-                  const [cx, cy, w, h] = box;
-                  const x1 = (cx - w / 2) * (canvas.width/640);
-                  const y1 = (cy - h / 2) * (canvas.height/640);
-                  ctx.strokeRect(x1, y1, w*(canvas.width/640), h*(canvas.height/640));
-                  const dist = Math.sqrt(Math.pow((cx/640)-0.5, 2) + Math.pow((cy/640)-0.5, 2));
-                  if (dist < bestDist) { bestDist = dist; bestTarget = { x: cx/640, y: cy/640 }; }
+                  if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
+                  const [cx, cy] = box;
+                  // Normalized center coordinates (0-1)
+                  const nx = cx / 640;
+                  const ny = cy / 640;
+                  
+                  // 1. Centrality Score: Proximity to crosshair (0.5, 0.5)
+                  // Lower distance = Higher Base Score
+                  const distToCenter = Math.sqrt(Math.pow(nx - 0.5, 2) + Math.pow(ny - 0.5, 2));
+                  
+                  let historyBonus = 0;
+                  if (hasHistory && lastTargetRef.current) {
+                      // 2. Consistency Score: Proximity to previous target
+                      const distToHistory = Math.sqrt(Math.pow(nx - lastTargetRef.current.x, 2) + Math.pow(ny - lastTargetRef.current.y, 2));
+                      
+                      // If this candidate is within 15% screen distance of the last locked target, boost it significantly.
+                      // This makes the lock "sticky", allowing the user to move the crosshair slightly off-target without losing lock.
+                      if (distToHistory < 0.15) {
+                          historyBonus = 0.4; // Strong bias
+                      }
+                  }
+
+                  // Final Score Algorithm: (Inverted Distance) + Bonus
+                  // Maximize this score
+                  const score = (1.0 - distToCenter) + historyBonus;
+
+                  if (score > bestScore) {
+                      bestScore = score;
+                      bestTarget = { x: nx, y: ny };
+                      lockedIndex = i;
+                  }
                });
+
+               // Update history if we found a valid target
+               if (bestTarget) {
+                   lastTargetRef.current = bestTarget;
+                   lastTargetTimeRef.current = now;
+               }
+
                setAiTarget(bestTarget);
+
+               // Rendering Logic
+               detections.boxes.forEach((box, i) => {
+                  if (detections.scores[i] < (profile.accessibility.yoloConfidence || 0.5)) return;
+                  
+                  const [cx, cy, w, h] = box;
+                  const x1 = (cx - w / 2) * (canvas.width / 640);
+                  const y1 = (cy - h / 2) * (canvas.height / 640);
+                  const rw = w * (canvas.width / 640);
+                  const rh = h * (canvas.height / 640);
+
+                  if (i === lockedIndex) {
+                      // Locked Target Visuals
+                      ctx.shadowColor = '#06b6d4'; // Cyan Glow
+                      ctx.shadowBlur = 20;
+                      ctx.strokeStyle = '#06b6d4';
+                      ctx.lineWidth = 3;
+                      ctx.strokeRect(x1, y1, rw, rh);
+                      ctx.shadowBlur = 0;
+
+                      // Score Label
+                      const score = (detections.scores[i] * 100).toFixed(0);
+                      ctx.fillStyle = '#06b6d4';
+                      const label = `LOCKED ${score}%`;
+                      const textMetrics = ctx.measureText(label);
+                      const bgWidth = textMetrics.width + 12;
+                      
+                      ctx.fillRect(x1, y1 - 22, bgWidth, 22);
+                      ctx.fillStyle = '#000';
+                      ctx.font = 'bold 12px monospace';
+                      ctx.fillText(label, x1 + 6, y1 - 6);
+
+                      // Vector Line to Center (Visualizing the "Pull")
+                      ctx.beginPath();
+                      ctx.moveTo(canvas.width / 2, canvas.height / 2);
+                      ctx.lineTo(x1 + rw / 2, y1 + rh / 2);
+                      ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
+                      ctx.setLineDash([5, 5]); // Dashed line for vector
+                      ctx.lineWidth = 2;
+                      ctx.stroke();
+                      ctx.setLineDash([]); // Reset
+
+                  } else if (profile.accessibility.visualIndicatorsEnabled) {
+                      // Candidate Visuals
+                      ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // Faint Red
+                      ctx.lineWidth = 1;
+                      ctx.strokeRect(x1, y1, rw, rh);
+                  }
+               });
             }
          }
       }
@@ -161,7 +253,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
     };
     detect();
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [model, profile.accessibility.yoloEnabled]);
+  }, [model, profile.accessibility.yoloEnabled, profile.accessibility.visualIndicatorsEnabled, profile.accessibility.yoloConfidence]);
 
   const startStream = async (mode: 'SCREEN' | 'CAMERA') => {
     try {
