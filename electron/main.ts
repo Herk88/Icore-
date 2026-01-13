@@ -120,8 +120,42 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
+      // CRITICAL: Disable background throttling to allow input loop to run 
+      // when the game window is focused/fullscreen.
+      backgroundThrottling: false,
     },
   });
+
+  // --- PERMISSION HANDLERS (Fix for 'Access to feature "hid" disallowed') ---
+  mainWindow.webContents.session.on('select-hid-device', (event, details, callback) => {
+    event.preventDefault();
+    // Auto-select the first available device or specific Sony Vendor ID (0x054C)
+    const sonyDevice = details.deviceList.find((d: any) => d.vendorId === 0x054C);
+    if (sonyDevice) {
+      callback(sonyDevice.deviceId);
+    } else {
+      if (details.deviceList && details.deviceList.length > 0) {
+        callback(details.deviceList[0].deviceId);
+      } else {
+        callback('');
+      }
+    }
+  });
+
+  mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    if (permission === 'hid' || permission === 'media') {
+      return true;
+    }
+    return false;
+  });
+
+  mainWindow.webContents.session.setDevicePermissionHandler((details) => {
+    if (details.deviceType === 'hid') {
+      return true;
+    }
+    return false;
+  });
+  // --------------------------------------------------------------------------
 
   if (isDev) {
     mainWindow.loadURL(devUrl);

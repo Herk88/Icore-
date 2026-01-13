@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { GamepadProvider, useGamepad } from './components/GamepadProvider';
 import DualSenseSVG from './components/DualSenseSVG';
@@ -17,7 +16,6 @@ import {
   Settings2, Layout, MousePointer2, Magnet, Wind, ChevronDown
 } from 'lucide-react';
 
-// --- Dashboard Component ---
 const Dashboard: React.FC<{ 
   profiles: Profile[], 
   activeProfile: Profile,
@@ -37,7 +35,6 @@ const Dashboard: React.FC<{
 
   return (
     <div className="h-screen flex flex-col bg-[#050505] text-slate-200 overflow-hidden font-sans select-none selection:bg-blue-500/30">
-      {/* Title Bar */}
       <div className="h-11 bg-black border-b border-white/5 flex items-center justify-between px-8 drag-region">
         <div className="flex items-center gap-4">
           <Binary className="text-blue-500 w-5 h-5 drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
@@ -47,7 +44,6 @@ const Dashboard: React.FC<{
           <button 
              onClick={connectHID}
              className="flex items-center gap-2.5 px-4 py-1.5 bg-blue-500/10 rounded-full border border-blue-500/20 shadow-inner hover:bg-blue-500/20 transition-all cursor-pointer group"
-             title="Click to establish WebHID connection for 1000Hz Polling"
           >
             <div className={`w-2 h-2 rounded-full ${state.connected ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500'} animate-pulse`} />
             <span className={`text-[9px] font-black uppercase tracking-widest group-hover:text-blue-300 transition-colors ${state.connected ? 'text-blue-400' : 'text-slate-500'}`}>
@@ -55,7 +51,6 @@ const Dashboard: React.FC<{
             </span>
           </button>
           <div className="flex items-center gap-2">
-             {/* Window Controls (Simulated for Web) */}
             <button onClick={() => window.icoreBridge?.minimize()} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors"><Minus className="w-4 h-4 text-slate-600" /></button>
             <button onClick={() => window.icoreBridge?.maximize()} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors"><Square className="w-3 h-3 text-slate-600" /></button>
             <button onClick={() => window.icoreBridge?.close()} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors"><X className="w-4 h-4 text-slate-600" /></button>
@@ -64,7 +59,6 @@ const Dashboard: React.FC<{
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         <aside className="w-80 bg-slate-950 border-r border-white/5 flex flex-col p-10 gap-10 z-20">
            <div className="flex items-center gap-5 mb-4 group cursor-pointer" onClick={() => setActiveTab('eng')}>
               <div className="w-14 h-14 bg-blue-600 rounded-[1.25rem] flex items-center justify-center shadow-[0_15px_30px_rgba(37,99,235,0.4)] group-hover:scale-105 transition-transform duration-300">
@@ -138,17 +132,13 @@ const Dashboard: React.FC<{
            </div>
         </aside>
 
-        {/* Main Content Area */}
         <main className="flex-1 p-14 overflow-y-auto custom-scrollbar relative">
            {activeTab === 'eng' && (
              <div className="grid grid-cols-1 xl:grid-cols-12 gap-16 animate-in fade-in slide-in-from-bottom-8 duration-700">
                <div className="xl:col-span-7 space-y-16">
-                 {/* Neural Vision Overlay */}
                  <div className="glass p-12 rounded-[4rem] border-white/5 shadow-2xl relative overflow-hidden">
-                    <CombatOverlay profile={activeProfile} />
+                    <CombatOverlay profile={activeProfile} onUpdateProfile={updateActiveProfile} />
                  </div>
-                 
-                 {/* DualSense SVG Visualization */}
                  <DualSenseSVG selectedButton={selectedButton} onSelectButton={setSelectedButton} />
                </div>
                
@@ -159,7 +149,6 @@ const Dashboard: React.FC<{
                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Optimization_Suite</span>
                     </div>
 
-                    {/* Expandable Aim Settings */}
                     <div className={`glass rounded-[2.5rem] border transition-all duration-500 overflow-hidden ${expandedSection === 'aim' ? 'border-blue-500/30 bg-slate-900/60 ring-1 ring-blue-500/10' : 'border-white/5 bg-slate-900/40 hover:border-white/10'}`}>
                       <button onClick={() => setExpandedSection(expandedSection === 'aim' ? null : 'aim')} className="w-full p-8 flex items-center justify-between text-left group">
                         <div className="flex items-center gap-5">
@@ -178,7 +167,6 @@ const Dashboard: React.FC<{
                       
                       <div className={`transition-all duration-500 ease-in-out ${expandedSection === 'aim' ? 'max-h-[1200px] opacity-100 border-t border-white/5' : 'max-h-0 opacity-0'}`}>
                         <div className="p-8 space-y-8">
-                          {/* Neural Tracking Toggle */}
                           <div className="flex items-center justify-between bg-slate-950/40 p-5 rounded-3xl border border-white/5">
                              <div className="flex items-center gap-4">
                                <div className={`p-2 rounded-xl ${activeProfile.accessibility.yoloEnabled ? 'bg-purple-600/20 text-purple-400' : 'bg-slate-800 text-slate-600'}`}>
@@ -191,7 +179,6 @@ const Dashboard: React.FC<{
                              </button>
                           </div>
 
-                          {/* Stabilization Modes */}
                           <div className="space-y-4">
                              <span className="text-[10px] font-black text-white uppercase tracking-widest">Stabilization Mode</span>
                              <div className="grid grid-cols-5 gap-1 bg-slate-950/50 p-1 rounded-2xl border border-white/5">
@@ -214,7 +201,6 @@ const Dashboard: React.FC<{
                              </div>
                           </div>
 
-                          {/* Sliders */}
                           <div className="space-y-6">
                              <div>
                                 <div className="flex justify-between items-center mb-2">
@@ -242,7 +228,6 @@ const Dashboard: React.FC<{
                              </div>
                           </div>
 
-                          {/* Toggles */}
                           <div className="grid grid-cols-2 gap-4">
                             <button onClick={() => updateAccessibility({ snapToTargetEnabled: !activeProfile.accessibility.snapToTargetEnabled })} className={`p-4 rounded-3xl border flex flex-col items-center gap-3 transition-all ${activeProfile.accessibility.snapToTargetEnabled ? 'bg-blue-600/10 border-blue-500/50 text-blue-400' : 'bg-slate-950 border-white/5 text-slate-600'}`}>
                               <Magnet className="w-5 h-5" /><span className="text-[9px] font-black uppercase tracking-widest">Snap-to-Target</span>
@@ -256,10 +241,8 @@ const Dashboard: React.FC<{
                     </div>
                  </div>
 
-                 {/* Axis Config - Replaced with StickConfigurator */}
                  <StickConfigurator profile={activeProfile} updateAxisMapping={updateAxisMapping} />
 
-                 {/* Mapping List */}
                  <div className="glass p-10 rounded-[3.5rem] shadow-2xl border-white/5">
                     <MappingList profile={activeProfile} onSelectButton={setSelectedButton} onUpdateMapping={updateMapping} />
                  </div>
@@ -267,7 +250,6 @@ const Dashboard: React.FC<{
              </div>
            )}
 
-           {/* Other Views */}
            {activeTab === 'tel' && <AnalyticsView />}
            {activeTab === 'tst' && <TestingView profile={activeProfile} />}
            {activeTab === 'sec' && <SecurityInterceptor />}
@@ -293,7 +275,6 @@ const Dashboard: React.FC<{
   );
 };
 
-// --- Main App Wrapper ---
 const App: React.FC = () => {
   const [profiles, setProfiles] = useState<Profile[]>(DEFAULT_PROFILES);
   const [activeProfileId, setActiveProfileId] = useState<string>(DEFAULT_PROFILES[0].id);
