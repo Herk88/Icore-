@@ -1,4 +1,3 @@
-
 import { Profile, AccessibilitySettings } from './types';
 
 const defaultAccessibility: AccessibilitySettings = {
@@ -8,7 +7,7 @@ const defaultAccessibility: AccessibilitySettings = {
   stabilizationMode: 'Off',
   quickReleaseCombo: true,
   stickyDurationLimit: 0,
-  globalTurboRate: 10,
+  globalTurboRate: 60,
   burstMode: false,
   burstCount: 3,
   highContrastEnabled: false,
@@ -25,7 +24,7 @@ const defaultAccessibility: AccessibilitySettings = {
   autoAimEnabled: false,
   autoAimStrength: 15,
   autoAimTargetSpeed: 5,
-  rapidFireEnabled: false,
+  rapidFireEnabled: true,
   combatHudEnabled: true,
   visualIndicatorsEnabled: true,
   yoloEnabled: false,
@@ -128,52 +127,6 @@ export const DEFAULT_PROFILES: Profile[] = [
       { axis: 'LEFT_STICK_X', mappedTo: 'WASD', sensitivity: 100, deadzone: 0.1, deadzoneOuter: 1.0, deadzoneType: 'SQUARE', curve: 'LINEAR' },
       { axis: 'LEFT_STICK_Y', mappedTo: 'WASD', sensitivity: 100, deadzone: 0.1, deadzoneOuter: 1.0, deadzoneType: 'SQUARE', curve: 'LINEAR' },
     ],
-    radialItems: [],
-  },
-  {
-    id: 'fortnite-build-god',
-    name: 'Fortnite: Builder Turbo',
-    category: 'Game-Specific',
-    description: 'Turbo build on R2 hold. Instant edit reset macro.',
-    targetProcess: 'FortniteClient-Win64-Shipping.exe',
-    created: Date.now(),
-    gyroEnabled: true,
-    gyroSensitivity: 1.4,
-    flickStickEnabled: true,
-    oneHandedMode: 'NONE',
-    virtualOutput: 'KB_MOUSE',
-    pollingRate: 1000,
-    accessibility: { 
-      ...defaultAccessibility,
-      rapidFireEnabled: true,
-      globalTurboRate: 20
-    },
-    mappings: [
-      { button: 'R2', mappedTo: 'Build/Fire', keyCode: '', type: 'MOUSE', isTurbo: true, turboSpeed: 20, mouseButton: 0 },
-      { button: 'TRIANGLE', mappedTo: 'Pickaxe', keyCode: 'KeyF', type: 'KEYBOARD' },
-      { button: 'TOUCHPAD', mappedTo: 'Edit', keyCode: 'KeyG', type: 'KEYBOARD' },
-    ],
-    axisMappings: [],
-    radialItems: [],
-  },
-  {
-    id: 'acc-onehand-left',
-    name: 'Accessibility - One Hand (Left)',
-    category: 'Accessibility',
-    description: 'Complete layout for left hand only',
-    created: Date.now(),
-    gyroEnabled: false,
-    gyroSensitivity: 1.0,
-    flickStickEnabled: false,
-    oneHandedMode: 'LEFT',
-    virtualOutput: 'KB_MOUSE',
-    pollingRate: 500,
-    accessibility: { ...defaultAccessibility, oneHandedShiftButton: 'L3' },
-    mappings: [
-      { button: 'L2', mappedTo: 'Right Click', keyCode: '', type: 'MOUSE', isSticky: true, mouseButton: 2 },
-      { button: 'L1', mappedTo: 'Shift', keyCode: 'ShiftLeft', type: 'KEYBOARD' },
-    ],
-    axisMappings: [],
     radialItems: [],
   }
 ];

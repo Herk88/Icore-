@@ -140,6 +140,9 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   });
   const lastKnownTargetRef = useRef<{ x: number, y: number } | null>(null);
   const targetLossTimeoutRef = useRef(0);
+  
+  // Predictive Tracking Ref
+  const targetVelocityRef = useRef({ vx: 0, vy: 0, lastX: 0, lastY: 0, lastTime: 0 });
 
   useEffect(() => { 
     profileRef.current = activeProfile; 
@@ -311,12 +314,33 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         if (target) {
             lastKnownTargetRef.current = target;
             targetLossTimeoutRef.current = 0;
+            
+            // PREDICTIVE TRACKING: Update Velocity
+            const dtVelocity = (now - targetVelocityRef.current.lastTime) / 1000;
+            if (dtVelocity > 0 && dtVelocity < 0.2) {
+                const rawVx = (target.x - targetVelocityRef.current.lastX) / dtVelocity;
+                const rawVy = (target.y - targetVelocityRef.current.lastY) / dtVelocity;
+                
+                // Exponential Smoothing for Velocity (Low Pass Filter)
+                const alpha = 0.3; 
+                targetVelocityRef.current.vx = targetVelocityRef.current.vx * (1 - alpha) + rawVx * alpha;
+                targetVelocityRef.current.vy = targetVelocityRef.current.vy * (1 - alpha) + rawVy * alpha;
+            }
+            targetVelocityRef.current.lastX = target.x;
+            targetVelocityRef.current.lastY = target.y;
+            targetVelocityRef.current.lastTime = now;
+
         } else if (lastKnownTargetRef.current) {
             targetLossTimeoutRef.current += deltaTime * 1000;
             if (targetLossTimeoutRef.current < 400) {
                 target = lastKnownTargetRef.current;
+                
+                // Decay velocity on signal loss
+                targetVelocityRef.current.vx *= 0.95;
+                targetVelocityRef.current.vy *= 0.95;
             } else {
                 lastKnownTargetRef.current = null;
+                targetVelocityRef.current = { vx: 0, vy: 0, lastX: 0, lastY: 0, lastTime: 0 };
             }
         }
 
@@ -325,19 +349,25 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         const isTriggerActive = rawButtons[6] || rawButtons[7];
 
         if (neuralConfig.yoloEnabled && target && isTriggerActive) {
-            const dx = target.x - 0.5; 
-            const dy = target.y - 0.5;
+            // Apply Prediction: Where will the target be in 50ms?
+            const predictionLookahead = 0.05; // 50ms compensation
+            const predX = target.x + (targetVelocityRef.current.vx * predictionLookahead);
+            const predY = target.y + (targetVelocityRef.current.vy * predictionLookahead);
+
+            const dx = predX - 0.5; 
+            const dy = predY - 0.5;
             
             // PID Controller Implementation for "Sticky" Lock
-            const Kp = (neuralConfig.yoloTrackingPower || 35) / 100; 
-            const Ki = 0.1;  // Integral Gain (builds up force if target stays off-center)
-            const Kd = 0.05; // Derivative Gain (dampens overshoot)
+            // Increased Gains for Snappier Locking
+            const Kp = (neuralConfig.yoloTrackingPower || 35) / 80; // Slightly higher base gain
+            const Ki = 0.15; // Increased Integral for holding power
+            const Kd = 0.08; // Increased Derivative for damping prediction overshoot
 
             pidStateRef.current.integralX += dx * deltaTime;
             pidStateRef.current.integralY += dy * deltaTime;
 
             // Anti-Windup
-            const maxIntegral = 0.5;
+            const maxIntegral = 0.3;
             pidStateRef.current.integralX = Math.max(-maxIntegral, Math.min(maxIntegral, pidStateRef.current.integralX));
             pidStateRef.current.integralY = Math.max(-maxIntegral, Math.min(maxIntegral, pidStateRef.current.integralY));
 
@@ -348,7 +378,7 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
             pidStateRef.current.prevErrorY = dy;
 
             // Calculate Force
-            const forceX = (Kp * dx + Ki * pidStateRef.current.integralX + Kd * derivativeX) * 2000; // Multiplier to map normalized coords to screen pixels
+            const forceX = (Kp * dx + Ki * pidStateRef.current.integralX + Kd * derivativeX) * 2000;
             const forceY = (Kp * dy + Ki * pidStateRef.current.integralY + Kd * derivativeY) * 2000;
 
             // Apply Tracking Force
@@ -385,6 +415,12 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
             if (lsX < -threshold) nextVirtualKeys.add('KeyA');
             else if (lsX > threshold) nextVirtualKeys.add('KeyD');
         }
+        
+        // --- RAPID FIRE (TURBO) LOGIC PRE-CALCULATION ---
+        const turboRate = profile.accessibility.globalTurboRate || 10; // Clicks per second
+        const turboInterval = 1000 / turboRate; // ms per cycle
+        // If current time falls in the first half of the interval, it's ON. Otherwise OFF.
+        const isTurboPhase = Math.floor(now / turboInterval) % 2 === 0;
 
         Object.keys(rawButtons).forEach((key) => {
             const idx = parseInt(key);
@@ -400,11 +436,23 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
 
             const active = rawButtons[idx] || nextStickyStates[btnName];
             if (active && mapping) {
-                if (mapping.type === 'KEYBOARD' && mapping.keyCode) {
-                    nextVirtualKeys.add(mapping.keyCode);
-                } else if (mapping.type === 'MOUSE') {
-                    const btn = mapping.mouseButton === 0 ? 'left' : mapping.mouseButton === 1 ? 'middle' : 'right';
-                    nextMouseButtons.add(btn);
+                // RAPID FIRE INJECTION
+                // If this is R2 (Fire) and Rapid Fire is enabled in global accessibility
+                // We suppress the output during the "OFF" phase
+                let shouldRegister = true;
+                if ((btnName === 'R2' || mapping.mappedTo === 'FIRE') && profile.accessibility.rapidFireEnabled) {
+                    if (!isTurboPhase) {
+                        shouldRegister = false;
+                    }
+                }
+
+                if (shouldRegister) {
+                    if (mapping.type === 'KEYBOARD' && mapping.keyCode) {
+                        nextVirtualKeys.add(mapping.keyCode);
+                    } else if (mapping.type === 'MOUSE') {
+                        const btn = mapping.mouseButton === 0 ? 'left' : mapping.mouseButton === 1 ? 'middle' : 'right';
+                        nextMouseButtons.add(btn);
+                    }
                 }
             }
         });
