@@ -145,15 +145,58 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         });
         
         if (devices.length > 0) {
-           console.log("HID Device Connected:", devices[0]);
-           await devices[0].open();
+           const device = devices[0];
+           console.log("HID Device Authorized:", device.productName);
+           if (!device.opened) {
+              await device.open();
+           }
            logicState.current.connected = true;
+           logicState.current.id = device.productName;
         }
       }
     } catch (e) {
       console.error("HID Connection failed:", e);
     }
   };
+
+  // HID Lifecycle Management
+  useEffect(() => {
+    if (!('hid' in navigator)) return;
+
+    const handleConnect = (e: any) => {
+        console.log("HID Device Connected:", e.device.productName);
+        logicState.current.connected = true;
+    };
+
+    const handleDisconnect = (e: any) => {
+        console.log("HID Device Disconnected:", e.device.productName);
+        logicState.current.connected = false;
+    };
+
+    (navigator as any).hid.addEventListener('connect', handleConnect);
+    (navigator as any).hid.addEventListener('disconnect', handleDisconnect);
+
+    // Attempt to restore persistent permissions
+    (navigator as any).hid.getDevices().then((devices: any[]) => {
+        const sony = devices.find(d => d.vendorId === 0x054C || d.vendorId === 0x054c);
+        if (sony) {
+           console.log("Restoring HID Session:", sony.productName);
+           if (!sony.opened) {
+               sony.open().catch((err: any) => console.warn("Failed to open HID:", err));
+           }
+           logicState.current.connected = true;
+           logicState.current.id = sony.productName;
+        }
+    }).catch((err: any) => {
+        // Suppress errors if policy blocks auto-access (user must manually connect)
+        console.warn("HID Auto-Restore blocked by policy:", err);
+    });
+
+    return () => {
+        (navigator as any).hid.removeEventListener('connect', handleConnect);
+        (navigator as any).hid.removeEventListener('disconnect', handleDisconnect);
+    };
+  }, []);
 
   const emergencyReset = () => {
     logicState.current.stickyStates = {};
@@ -194,7 +237,11 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
 
         const gp = navigator.getGamepads()[0];
         if (!gp) {
-            if (logicState.current.connected) logicState.current.connected = false;
+            // Note: We don't force false here if HID is active, to allow hybrid state
+            // But if getGamepads is null, we can't read inputs anyway.
+            if (logicState.current.connected && !logicState.current.id?.includes("HID")) {
+                 logicState.current.connected = false; 
+            }
             return;
         }
 
@@ -240,42 +287,37 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
             smoothedRightStickRef.current = { x: rsX, y: rsY };
         }
 
-        // Neural Aim Assist
+        // --- NEURAL AIM ASSIST & TARGET TRACKING ---
+        // Logic: If target is detected AND (Right Click/R2 OR Left Click/L2 is held), Lock & Follow
         const target = aiTargetRef.current;
         const neuralConfig = profile.accessibility;
         let finalVelX = 0;
         let finalVelY = 0;
 
-        if (neuralConfig.yoloEnabled && target) {
+        const sensitivity = rsConfigX?.sensitivity || 50;
+        finalVelX = rsX * sensitivity * 0.5;
+        finalVelY = rsY * sensitivity * 0.5;
+
+        // Check Trigger States for Activation (L2=6, R2=7)
+        // User requested tracking on "R2 or Right Click Release" (interpreted as Hold R2 or L2)
+        const isTriggerActive = rawButtons[6] || rawButtons[7];
+
+        if (neuralConfig.yoloEnabled && target && isTriggerActive) {
             const dx = target.x - 0.5; 
             const dy = target.y - 0.5;
+            
+            // Apply Tracking Force (Follow the Target)
+            const trackingStrength = (neuralConfig.yoloTrackingPower || 35) / 100; 
+            
+            // Calculate distance to center
             const dist = Math.sqrt(dx*dx + dy*dy);
-
-            if (neuralConfig.aimSlowdownEnabled && dist < 0.15) {
-                const slowdownFactor = 0.35; 
-                rsX *= slowdownFactor;
-                rsY *= slowdownFactor;
+            
+            // Only engage if somewhat close (FOV check) or if user wants full screen locking
+            // For "Lock and Follow", we apply force to center the target
+            if (dist > 0.01) { // Avoid jitter at dead center
+               finalVelX += dx * trackingStrength * 50; 
+               finalVelY += dy * trackingStrength * 50;
             }
-
-            const sensitivity = rsConfigX?.sensitivity || 50;
-            finalVelX = rsX * sensitivity * 0.5;
-            finalVelY = rsY * sensitivity * 0.5;
-
-            const pullPower = neuralConfig.yoloTrackingPower / 100;
-            if (pullPower > 0) {
-                finalVelX += dx * 2 * pullPower * 12;
-                finalVelY += dy * 2 * pullPower * 12;
-            }
-
-            if (neuralConfig.snapToTargetEnabled) {
-                const snapStrength = 2.5; 
-                finalVelX += dx * snapStrength * 20;
-                finalVelY += dy * snapStrength * 20;
-            }
-        } else {
-            const sensitivity = rsConfigX?.sensitivity || 50;
-            finalVelX = rsX * sensitivity * 0.5;
-            finalVelY = rsY * sensitivity * 0.5;
         }
 
         // Mouse Injection

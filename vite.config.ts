@@ -22,7 +22,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: {
-      "Permissions-Policy": "hid=*, camera=*, microphone=*" 
+      "Permissions-Policy": "hid=(self), camera=(self), microphone=(self)" 
     }
   }
 });
