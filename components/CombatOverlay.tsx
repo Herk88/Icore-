@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { BrainCircuit, Camera, Monitor } from 'lucide-react';
+import { BrainCircuit, Camera, Monitor, Loader2, AlertCircle, HardDrive, CloudDownload, FileCode } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
-const MODEL_MIRRORS = ['https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json'];
+const MODEL_MIRRORS = [
+    'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json', // Primary
+    'https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json' // Backup
+];
 
 export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const { setAiTarget, state } = useGamepad();
@@ -24,6 +27,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
   const [model, setModel] = useState<tf.GraphModel | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingText, setLoadingText] = useState('Initializing Neural Core...');
   const [needsDownload, setNeedsDownload] = useState(false);
   const [inferenceTime, setInferenceTime] = useState(0);
   const [fps, setFps] = useState(0);
@@ -57,20 +61,28 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   }, []);
 
   const handleLocalFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    setError(null);
     if (event.target.files && event.target.files.length > 0) {
         setLoading(true);
+        setLoadingText("Parsing Local Tensor Graph...");
         try {
             const files = Array.from(event.target.files);
             const hasJson = files.some((f: any) => f.name.toLowerCase().endsWith('.json'));
             const hasBin = files.some((f: any) => f.name.toLowerCase().endsWith('.bin'));
-            if (!hasJson || !hasBin) throw new Error("Selection must include 'model.json' AND weight files.");
+            
+            if (!hasJson || !hasBin) {
+                throw new Error("Missing Files: Select BOTH 'model.json' AND the '.bin' weight files.");
+            }
+
+            // TensorFlow.js browserFiles IO handler
             const model = await tf.loadGraphModel(tf.io.browserFiles(files));
+            
             setModel(model);
             setLoading(false);
             setNeedsDownload(false);
-            setError(null);
         } catch (err: any) {
-            setError(err.message);
+            console.error(err);
+            setError(err.message || "Failed to load local model.");
             setLoading(false);
         }
     }
@@ -78,13 +90,33 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
   const downloadAndInstallModel = async () => {
       setLoading(true);
+      setError(null);
+      
+      const tryLoad = async (url: string) => {
+          setLoadingText(`Contacting Neural Mirror...`);
+          const loadedModel = await tf.loadGraphModel(url);
+          return loadedModel;
+      };
+
       try {
-          const loadedModel = await tf.loadGraphModel(MODEL_MIRRORS[0]);
-          setModel(loadedModel);
-          setLoading(false);
-          setNeedsDownload(false);
-      } catch (err) {
-          setError("Download Failed");
+          // Try Primary
+          let loadedModel;
+          try {
+              loadedModel = await tryLoad(MODEL_MIRRORS[0]);
+          } catch (e) {
+              console.warn("Primary mirror failed, trying backup...");
+              loadedModel = await tryLoad(MODEL_MIRRORS[1]);
+          }
+
+          if (loadedModel) {
+            setModel(loadedModel);
+            setLoading(false);
+            setNeedsDownload(false);
+          } else {
+              throw new Error("All mirrors unreachable.");
+          }
+      } catch (err: any) {
+          setError(`Download Failed: ${err.message}. Check Internet.`);
           setLoading(false);
       }
   };
@@ -93,10 +125,16 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     const checkCacheAndInit = async () => {
       try {
         await tf.ready();
-        await tf.setBackend('webgl');
+        if (tf.getBackend() !== 'webgl') {
+            await tf.setBackend('webgl');
+        }
+        // Check if we have a model loaded? No persistence in this demo, so always prompt.
         setNeedsDownload(true);
         setLoading(false);
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+          console.error(e);
+          setError("WebGL Backend Initialization Failed");
+      }
     };
     checkCacheAndInit();
   }, []);
@@ -122,7 +160,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                const isEngaged = buttons[6] || buttons[7]; 
 
                // Hysteresis Parameters
-               // If engaged, we stick much harder to the target
                const STICKY_BONUS = isEngaged ? 2.5 : 0.8; 
                const SAME_TARGET_RADIUS = isEngaged ? 0.3 : 0.15; // normalized distance
 
@@ -165,7 +202,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                    }
                    lastTargetRef.current = bestTarget;
                } else {
-                   // Immediate clear or decay? For now immediate clear to prevent ghosting
                    lastTargetRef.current = null;
                }
                
@@ -183,14 +219,12 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                   const rh = h * (canvas.height / 640);
 
                   if (i === lockedIndex) {
-                      // Locked Target Visuals
                       const color = isEngaged ? '#ef4444' : '#06b6d4'; // Red vs Cyan
                       ctx.shadowColor = color;
                       ctx.shadowBlur = isEngaged ? 25 : 15;
                       ctx.strokeStyle = color;
                       ctx.lineWidth = isEngaged ? 4 : 2;
                       
-                      // Bracket Style
                       const bracketLen = Math.min(rw, rh) * 0.3;
                       ctx.beginPath();
                       ctx.moveTo(x1, y1 + bracketLen); ctx.lineTo(x1, y1); ctx.lineTo(x1 + bracketLen, y1);
@@ -199,7 +233,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                       ctx.moveTo(x1 + bracketLen, y1 + rh); ctx.lineTo(x1, y1 + rh); ctx.lineTo(x1, y1 + rh - bracketLen);
                       ctx.stroke();
 
-                      // Label
                       ctx.shadowBlur = 0;
                       ctx.fillStyle = color;
                       const label = `${isEngaged ? 'ENGAGED' : 'LOCKED'} ${(score * 100).toFixed(0)}%`;
@@ -209,7 +242,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                       ctx.fillStyle = '#000';
                       ctx.fillText(label, x1 + 5, y1 - 6);
 
-                      // Vector Line
                       if (isEngaged) {
                           ctx.beginPath();
                           ctx.moveTo(canvas.width/2, canvas.height/2);
@@ -273,7 +305,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       else stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
       if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
       setSourceMode(mode);
-    } catch (e) { setError("Stream Failed"); }
+    } catch (e) { setError("Stream Access Denied. Check permissions."); }
   };
 
   return (
@@ -288,15 +320,43 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
              <button onClick={() => startStream('CAMERA')} className="p-4 rounded-2xl bg-slate-900 text-slate-500"><Camera className="w-6 h-6" /></button>
             </div>
         </div>
-        {needsDownload && !loading && (
+        
+        {loading && (
+             <div className="absolute inset-0 flex items-center justify-center bg-black/90 backdrop-blur-md z-40 pointer-events-auto animate-in fade-in">
+                <div className="text-center space-y-4">
+                    <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
+                    <p className="text-[12px] font-black text-white uppercase tracking-widest">{loadingText}</p>
+                </div>
+            </div>
+        )}
+
+        {needsDownload && !loading && !model && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-30 pointer-events-auto">
-                <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem]">
-                    <h3 className="text-xl font-black text-white uppercase">Neural Core Required</h3>
-                    <select className="w-full bg-slate-900 border border-white/20 rounded-2xl p-4 text-white" onChange={(e) => { if(e.target.value==='local') fileInputRef.current?.click(); else if(e.target.value==='cloud') downloadAndInstallModel(); }}>
-                        <option value="default" disabled selected>Select Neural Source...</option>
-                        <option value="cloud">Download Official YOLOv8n</option>
-                        <option value="local">Load Local Model</option>
-                    </select>
+                <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem] shadow-2xl">
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">Neural Core Required</h3>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold">YOLOv8n / ONNX / TFJS-Graph</p>
+                    </div>
+                    
+                    {error && (
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-left">
+                            <AlertCircle className="w-8 h-8 text-red-500" />
+                            <p className="text-[10px] font-bold text-red-400 uppercase leading-tight">{error}</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <button onClick={downloadAndInstallModel} className="p-4 bg-blue-600 hover:bg-blue-500 rounded-2xl transition-colors group text-left">
+                            <CloudDownload className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
+                            <p className="text-[10px] font-black text-white uppercase">Download Official</p>
+                            <p className="text-[8px] text-blue-200 uppercase">YOLOv8n (20MB)</p>
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-slate-800 hover:bg-slate-700 rounded-2xl transition-colors group text-left">
+                            <HardDrive className="w-6 h-6 text-slate-400 mb-2 group-hover:scale-110 transition-transform" />
+                            <p className="text-[10px] font-black text-slate-300 uppercase">Load Local</p>
+                            <p className="text-[8px] text-slate-500 uppercase">.json + .bin</p>
+                        </button>
+                    </div>
                     <input type="file" multiple accept=".json,.bin,.pt,.onnx" ref={fileInputRef} className="hidden" onChange={handleLocalFileSelect} />
                 </div>
             </div>
