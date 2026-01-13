@@ -1,16 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile, AccessibilitySettings } from '../types';
-import { Target, BrainCircuit, Loader2, Cpu, Scan, Monitor, Camera, HardDrive, AlertCircle, Database, Check, Wifi, ServerCrash, Download, CloudDownload, Trash2, ChevronDown, FolderOpen, FileCode, Terminal, Settings, Gauge, Zap, AppWindow, Square } from 'lucide-react';
+import { BrainCircuit, Loader2, Monitor, Camera, HardDrive, Database, Check, Wifi, ServerCrash, CloudDownload, ChevronDown, FolderOpen, FileCode, Terminal, Settings, Gauge, Zap, AppWindow, Scan } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 // Verified Mirrors for YOLOv8n Web Model
 const MODEL_MIRRORS = [
-  // Mirror 1: jsDelivr (CDN - High Speed)
   'https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json',
-  // Mirror 2: GitHub Pages (High Availability)
   'https://yqlbu.github.io/yolov8-tfjs-demo/model/yolov8n_web_model/model.json',
-  // Mirror 3: Raw GitHub (Fallback)
   'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json'
 ];
 
@@ -26,9 +23,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   
-  // Offscreen canvas for fast pixel reading (Performance Optimization)
   const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Dedicated canvas for resizing input to 640x640 before Tensor conversion
   const inferenceCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [model, setModel] = useState<tf.GraphModel | null>(null);
@@ -41,32 +36,29 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
   const [isModelCached, setIsModelCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [activeMirrorIndex, setActiveMirrorIndex] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
 
-  // New State for Model Info Display
   const [activeModelName, setActiveModelName] = useState<string>('Unloaded');
   const [activeModelSource, setActiveModelSource] = useState<'CACHE' | 'STREAM' | 'LOCAL'>('CACHE');
   
-  // Capture System State
   const [captureStats, setCaptureStats] = useState({ total: 0, lastReason: 'IDLE', storageUsage: 0 });
   const lastCaptureTimeRef = useRef<number>(0);
   const currentDetectionsRef = useRef<{ boxes: number[][], scores: number[], classes: number[] } | null>(null);
 
   const requestRef = useRef<number | undefined>(undefined);
   const lastInferenceRef = useRef<number>(0);
-  const isInferringRef = useRef(false); // Track async inference state
-  
+  const isInferringRef = useRef(false);
+
   // Initialize offscreen canvases
   useEffect(() => {
     const canvas = document.createElement('canvas');
-    canvas.width = 50; // Low res for fast analysis
+    canvas.width = 50; 
     canvas.height = 50;
     analysisCanvasRef.current = canvas;
 
     const infCanvas = document.createElement('canvas');
-    infCanvas.width = 640; // YOLOv8 Native Input
+    infCanvas.width = 640; 
     infCanvas.height = 640;
     inferenceCanvasRef.current = infCanvas;
 
@@ -89,156 +81,14 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
     });
   }, []);
 
-  const calculateImageQualityFast = (sourceCanvas: HTMLCanvasElement): { brightness: number, sharpness: number } => {
-    const analysisCanvas = analysisCanvasRef.current;
-    if (!analysisCanvas) return { brightness: 0, sharpness: 0 };
-
-    const ctx = analysisCanvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return { brightness: 0, sharpness: 0 };
-
-    // Downsample for speed
-    ctx.drawImage(sourceCanvas, 0, 0, analysisCanvas.width, analysisCanvas.height);
-    
-    const imageData = ctx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
-    const data = imageData.data;
-    const width = analysisCanvas.width;
-    const height = analysisCanvas.height;
-
-    let brightnessSum = 0;
-    const grayData = new Float32Array(width * height);
-
-    // Calculate Brightness & Grayscale in one pass
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i+1];
-      const b = data[i+2];
-      brightnessSum += (r + g + b) / 3;
-      grayData[i/4] = 0.299 * r + 0.587 * g + 0.114 * b;
-    }
-    const avgBrightness = brightnessSum / (width * height);
-
-    // Laplacian Variance (Sharpness) on the small thumbnail
-    let mean = 0;
-    let variance = 0;
-    let count = 0;
-
-    // Convolve with 3x3 Laplacian kernel [[0,1,0],[1,-4,1],[0,1,0]]
-    // Skip borders
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-         const idx = y * width + x;
-         const laplacian = 
-           grayData[idx - width] +      // Top
-           grayData[idx - 1] +          // Left
-           (grayData[idx] * -4) +       // Center
-           grayData[idx + 1] +          // Right
-           grayData[idx + width];       // Bottom
-         
-         mean += laplacian;
-         variance += laplacian * laplacian;
-         count++;
-      }
-    }
-    
-    mean /= count;
-    variance = (variance / count) - (mean * mean);
-
-    return { brightness: avgBrightness, sharpness: variance };
-  };
-
-  const processSporadicCapture = async () => {
-    const config = profile.accessibility.trainingConfig;
-    if (!config.enabled || !currentDetectionsRef.current || !canvasRef.current) return;
-
-    const now = Date.now();
-    if (now - lastCaptureTimeRef.current < config.minInterval) return;
-
-    // 1. Evaluate Probability (Active Learning Logic)
-    const detections = currentDetectionsRef.current;
-    
-    // Filter for Persons (Class 0) only
-    const personIndices = detections.classes
-      .map((c, i) => c === 0 ? i : -1)
-      .filter(i => i !== -1);
-
-    if (personIndices.length === 0) {
-      if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: No targets'}));
-      return; 
-    }
-
-    const confidences = personIndices.map(i => detections.scores[i]);
-    const hasLowConfidence = confidences.some(c => c < config.confidenceThreshold);
-    const probability = hasLowConfidence ? config.probLowConfidence : config.probHighConfidence;
-
-    if (Math.random() > probability) {
-       if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: `SKIP: RNG (${(probability * 100).toFixed(0)}%)`}));
-       return;
-    }
-
-    // 2. Image Quality Filters (Fast Path)
-    const quality = calculateImageQualityFast(canvasRef.current);
-    
-    if (quality.brightness < config.minBrightness) {
-      if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Dark'}));
-      return;
-    }
-    
-    // Sharpness check (Threshold adjusted for downsampled image, approx 50 is good for thumbnail)
-    if (quality.sharpness < (config.minSharpness * 0.5)) { 
-       if (isMounted.current) setCaptureStats(prev => ({...prev, lastReason: 'SKIP: Too Blurry'}));
-       return;
-    }
-
-    // 3. Prepare Data for Export
-    lastCaptureTimeRef.current = now;
-    const base64Image = canvasRef.current.toDataURL('image/jpeg', 0.9);
-    const inputSize = 640; // YOLOv8 Standard Input Size
-
-    // Format Labels for YOLO: <object-class> <x_center> <y_center> <width> <height>
-    // NOTE: TFJS boxes from our model are [cx, cy, w, h] in PIXELS (relative to 640x640 input)
-    // We must Normalize them to 0-1 range for the .txt file.
-    const labels = personIndices.map(i => {
-      const [cxRaw, cyRaw, wRaw, hRaw] = detections.boxes[i];
-      
-      const cx = cxRaw / inputSize;
-      const cy = cyRaw / inputSize;
-      const w = wRaw / inputSize;
-      const h = hRaw / inputSize;
-
-      // Clamp values to 0-1 to avoid training errors
-      return `0 ${Math.max(0, Math.min(1, cx)).toFixed(6)} ${Math.max(0, Math.min(1, cy)).toFixed(6)} ${Math.max(0, Math.min(1, w)).toFixed(6)} ${Math.max(0, Math.min(1, h)).toFixed(6)}`;
-    }).join('\n');
-
-    const filename = `capture_${now}`;
-    
-    // 4. Send to Electron Bridge
-    if (window.icoreBridge?.saveTrainingData) {
-      const result = await window.icoreBridge.saveTrainingData({
-        image: base64Image,
-        labels: labels,
-        filename: filename
-      });
-      
-      if (isMounted.current) {
-        if (result.success) {
-          setCaptureStats(prev => ({
-            total: prev.total + 1,
-            lastReason: 'CAPTURED',
-            storageUsage: Math.min(100, (prev.total + 1) / 10)
-          }));
-        } else {
-          setCaptureStats(prev => ({...prev, lastReason: `ERR: ${result.reason}`}));
-        }
-      }
-    }
-  };
-
   const startStream = async (mode: 'SCREEN' | 'WINDOW' | 'CAMERA') => {
     try {
       if (isMounted.current) {
          setError(null);
-         setShowSourceMenu(false); // Close menu on selection
+         setShowSourceMenu(false);
+         // Do NOT set loading to true here, we want the stream to just appear
       }
+      
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       }
@@ -246,15 +96,15 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       let stream: MediaStream;
       if (mode === 'SCREEN' || mode === 'WINDOW') {
         const displaySurface = mode === 'SCREEN' ? 'monitor' : 'window';
-        // Note: displaySurface constraint is a hint. Browser may still show picker with multiple tabs.
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: { 
              frameRate: { ideal: 60 },
              displaySurface: displaySurface 
           },
           audio: false
-        }).catch(() => {
-            throw new Error("Display media denied");
+        }).catch((e) => {
+            console.warn("Display media cancelled", e);
+            throw new Error("Selection Cancelled");
         });
       } else {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -265,17 +115,16 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(e => console.error("Video play error:", e));
       }
       if (isMounted.current) setSourceMode(mode);
-    } catch (err) {
-      console.error("[NEURAL] Stream failed:", err);
-      if (isMounted.current) {
-        setError("STREAM_FAIL: Check Permissions or Device Connection");
-        setLoading(false);
+    } catch (err: any) {
+      if (err.message !== "Selection Cancelled") {
+          console.error("[NEURAL] Stream failed:", err);
+          if (isMounted.current) {
+            setError("STREAM_FAIL: Check Permissions or Device Connection");
+          }
       }
-    } finally {
-      if (isMounted.current) setLoading(false);
     }
   };
 
@@ -288,7 +137,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         try {
             const files: File[] = Array.from(event.target.files);
 
-            // COMPATIBILITY CHECK: Native YOLO Files (.pt / .onnx)
+            // COMPATIBILITY CHECK
             const nativeFiles = files.filter(f => 
                 f.name.toLowerCase().endsWith('.pt') || 
                 f.name.toLowerCase().endsWith('.yaml') || 
@@ -296,18 +145,15 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
             );
             
             if (nativeFiles.length > 0) {
-                // We handle this gracefully - User wants to test support
                 if (isMounted.current) {
                     setLoading(false);
-                    // Instead of crashing, we show a diagnostic warning
                     setError(`NATIVE_DETECTED: ${nativeFiles[0].name} loaded. Browser inference requires TFJS format.`);
-                    // Clear input to allow re-selection
                     if (fileInputRef.current) fileInputRef.current.value = '';
                     return;
                 }
             }
 
-            // COMPLETENESS CHECK: Ensure model topology (.json) and weights (.bin) are present
+            // COMPLETENESS CHECK
             const hasJson = files.some(f => f.name.toLowerCase().endsWith('.json'));
             const hasBin = files.some(f => f.name.toLowerCase().endsWith('.bin'));
 
@@ -315,10 +161,10 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                 throw new Error("INCOMPLETE_MODEL: Selection must include 'model.json' AND weight files (.bin) together.");
             }
 
-            // TFJS requires the model.json and the binary weights passed together as a set of files
+            // LOAD
             const model = await tf.loadGraphModel(tf.io.browserFiles(files));
             
-            // Warmup
+            // WARMUP
             if (isMounted.current) setLoadingMessage('Verifying Neural Integrity...');
             tf.tidy(() => model.predict(tf.zeros([1, 640, 640, 3])));
             
@@ -327,9 +173,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                 setLoading(false);
                 setNeedsDownload(false);
                 setError(null);
-                setIsModelCached(false); // Local models aren't auto-cached to IDB here for simplicity
                 
-                // Set metadata for UI
                 const jsonFile = files.find(f => f.name.toLowerCase().endsWith('.json'));
                 const simpleName = jsonFile ? jsonFile.name.replace('.json', '').replace(/[_-]/g, ' ').toUpperCase() : 'CUSTOM MODEL';
                 setActiveModelName(simpleName);
@@ -341,12 +185,10 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         } catch (err: any) {
             console.error("Local Load Error:", err);
             if (isMounted.current) {
-                const errorMessage = err.message || "LOCAL_LOAD_FAIL: Invalid Model Files (Select .json and .bin)";
-                setError(errorMessage);
+                setError(err.message || "LOCAL_LOAD_FAIL");
                 setLoading(false);
             }
         } finally {
-            // Ensure input is cleared so change event fires again if user picks same file
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     }
@@ -360,30 +202,16 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       }
       
       const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
-
-      // Clean up previous attempts
-      try {
-        await tf.io.removeModel(localModelPath);
-      } catch (e) { /* ignore */ }
+      try { await tf.io.removeModel(localModelPath); } catch (e) { /* ignore */ }
 
       for (let i = 0; i < MODEL_MIRRORS.length; i++) {
         if (!isMounted.current) return;
-        
         const url = MODEL_MIRRORS[i];
         try {
-          setActiveMirrorIndex(i);
           setLoadingMessage(`Connecting to Mirror ${i + 1}...`);
-          
-          // Use a timestamp to bust cache if needed
-          const fetchUrl = `${url}?t=${Date.now()}`;
-          const loadedModel = await tf.loadGraphModel(fetchUrl, {
-             onProgress: (p) => {
-               if (isMounted.current) setLoadingMessage(`Downloading Data: ${(p * 100).toFixed(0)}%`);
-             }
-          });
+          const loadedModel = await tf.loadGraphModel(`${url}?t=${Date.now()}`);
           
           if (isMounted.current) setLoadingMessage('Verifying Neural Integrity...');
-          // Warmup inference to check model validity
           tf.tidy(() => loadedModel.predict(tf.zeros([1, 640, 640, 3])));
 
           if (isMounted.current) setLoadingMessage('Installing to Local Storage...');
@@ -393,9 +221,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                 setIsModelCached(true);
                 setActiveModelSource('CACHE');
             }
-            console.log(`[NEURAL] Model successfully installed from Mirror ${i + 1}`);
           } catch (saveError) {
-             console.warn("[NEURAL] Local storage failed (IndexedDB access denied?), using memory-only model.", saveError);
              if (isMounted.current) {
                  setIsModelCached(false);
                  setActiveModelSource('STREAM');
@@ -409,7 +235,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
           }
           return;
         } catch (err) {
-          console.warn(`[NEURAL] Mirror ${i + 1} download failed:`, err);
+          console.warn(`Mirror ${i + 1} failed`);
         }
       }
 
@@ -420,13 +246,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       }
   };
 
-  const clearCacheAndRetry = async () => {
-    try {
-       await tf.io.removeModel(`indexeddb://yolo-nano-m1m-cache`);
-    } catch (e) { /* ignore */ }
-    window.location.reload();
-  };
-
+  // INITIALIZATION EFFECT
   useEffect(() => {
     const checkCacheAndInit = async () => {
       if (!isMounted.current) return;
@@ -437,36 +257,25 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
       setNeedsDownload(false);
       
       try {
-        // Race condition timeout for tf.ready()
         await Promise.race([
             tf.ready(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('TFJS_TIMEOUT')), 5000))
         ]);
 
         if (tf.getBackend() !== 'webgl') {
-          // Attempt to force WebGL, fallback to CPU if needed
-          await tf.setBackend('webgl').catch(async () => {
-             console.warn('WebGL backend not available, falling back to CPU');
-             await tf.setBackend('cpu');
-          });
+          await tf.setBackend('webgl').catch(async () => await tf.setBackend('cpu'));
         }
       } catch (e) {
-        console.warn('TensorFlow backend initialization error:', e);
         if (isMounted.current) {
-           setError("NEURAL_INIT_TIMEOUT: WebGL Backend Unresponsive. Check Hardware Acceleration.");
+           setError("NEURAL_INIT_TIMEOUT: WebGL Backend Unresponsive.");
            setLoading(false);
         }
         return;
       }
 
       const localModelPath = `indexeddb://yolo-nano-m1m-cache`;
-
-      // 1. Try Loading from Cache First
       try {
         const loadedModel = await tf.loadGraphModel(localModelPath);
-        console.log('[NEURAL] Model loaded from IndexedDB cache');
-        
-        // Quick verify
         tf.tidy(() => loadedModel.predict(tf.zeros([1, 640, 640, 3])));
         
         if (isMounted.current) {
@@ -477,7 +286,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
           setLoading(false);
         }
       } catch (e) {
-        console.log('[NEURAL] Cache miss or invalid. Download required.');
+        console.log('[NEURAL] Cache miss.');
         if (isMounted.current) {
           setIsModelCached(false);
           setNeedsDownload(true);
@@ -485,51 +294,24 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         }
       }
     };
-
     checkCacheAndInit();
-    
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    };
+    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
   }, [profile.accessibility.neuralModelQuality]);
 
+  // MAIN RENDER & INFERENCE LOOP
   useEffect(() => {
-    return () => {
-      if (videoRef.current?.srcObject) {
-        (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-      }
-    }
-  }, []);
-
-  // Trigger capture logic on R2 press
-  useEffect(() => {
-    if (state.buttons[7]) {
-      processSporadicCapture();
-    }
-  }, [state.buttons]);
-
-  // Main Detection Loop (Optimized for Async/Sync Hybrid)
-  useEffect(() => {
-    if (!profile.accessibility.yoloEnabled || !model) {
-      setAiTarget(null);
-      return;
-    }
-
-    const detect = () => {
+    // CRITICAL FIX: Loop runs regardless of model state to ensure video feed is visible
+    const loop = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // 1. RENDER LOOP (Sync - 60Hz)
-      // Always draw the latest video frame and existing detections to maintain high FPS visual feedback
+      // 1. ALWAYS RENDER VIDEO (Even if no model)
       if (video && canvas && video.readyState === 4) {
          const ctx = canvas.getContext('2d', { alpha: false });
          if (ctx) {
-            // Draw Video
-            if (video.videoWidth > 0 && video.videoHeight > 0) {
-               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Draw Overlays (using cached detections from refs)
+            // Draw Overlays if detections exist
             if (currentDetectionsRef.current) {
                const detections = currentDetectionsRef.current;
                const inputSize = 640;
@@ -545,15 +327,13 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
 
                   const [cx, cy, w, h] = box;
                   
+                  // Scale normalized 640x640 coords to canvas size
                   const scaleX = canvas.width / inputSize;
                   const scaleY = canvas.height / inputSize;
-                  
                   const x1 = (cx - w / 2) * scaleX;
                   const y1 = (cy - h / 2) * scaleY;
-                  const scaledW = w * scaleX;
-                  const scaledH = h * scaleY;
-
-                  ctx.strokeRect(x1, y1, scaledW, scaledH);
+                  
+                  ctx.strokeRect(x1, y1, w * scaleX, h * scaleY);
                   
                   const normCX = cx / inputSize;
                   const normCY = cy / inputSize;
@@ -565,16 +345,14 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                   }
                });
                
-               // Update global target ref (Fast, no re-render)
                setAiTarget(bestTarget);
             }
          }
       }
 
-      // 2. INFERENCE LOOP (Async - Throttled by Model Speed)
-      // Only start new inference if previous one is finished
+      // 2. INFERENCE (Only if model is loaded)
       const now = performance.now();
-      if (model && !isInferringRef.current && (now - lastInferenceRef.current >= 16)) {
+      if (model && profile.accessibility.yoloEnabled && !isInferringRef.current && (now - lastInferenceRef.current >= 16)) {
          isInferringRef.current = true;
          lastInferenceRef.current = now;
 
@@ -584,93 +362,119 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                const inputSize = 640;
                const infCanvas = inferenceCanvasRef.current;
 
-               // CPU-based Resize (More efficient than GPU resize for large video textures)
                if (video && video.readyState === 4 && infCanvas) {
                   const infCtx = infCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
                   if (infCtx) {
                      infCtx.drawImage(video, 0, 0, inputSize, inputSize);
-
-                     // Run Inference Pipeline
-                     // tf.tidy ensures intermediate tensors are cleaned up
+                     
                      const tensorData = tf.tidy(() => {
                         const img = tf.browser.fromPixels(infCanvas);
                         const normalized = img.toFloat().div(255.0).expandDims(0);
-                        
                         const output = model.predict(normalized) as tf.Tensor;
                         const res = output.squeeze([0]); 
                         const transposed = res.transpose([1, 0]); 
-                        
                         const [boxes, scores] = tf.split(transposed, [4, 80], 1);
-                        const maxScores = scores.max(1);
-                        const classes = scores.argMax(1);
-                        
                         const nmsIndices = tf.image.nonMaxSuppression(
                            convertCenterToCorners(boxes),
-                           maxScores as tf.Tensor1D,
+                           scores.max(1) as tf.Tensor1D,
                            12, 0.45,
                            profile.accessibility?.yoloConfidence || 0.5
                         );
-                        
-                        // Return selected tensors for download
                         return {
                            boxes: boxes.gather(nmsIndices),
-                           scores: maxScores.gather(nmsIndices),
-                           classes: classes.gather(nmsIndices)
+                           scores: scores.max(1).gather(nmsIndices),
+                           classes: scores.argMax(1).gather(nmsIndices)
                         };
                      });
 
-                     // Async Download to prevent blocking UI thread
                      const [b, s, c] = await Promise.all([
                         tensorData.boxes.array(),
                         tensorData.scores.array(),
                         tensorData.classes.array()
                      ]);
 
-                     // Explicit disposal of download tensors
                      tensorData.boxes.dispose();
                      tensorData.scores.dispose();
                      tensorData.classes.dispose();
 
-                     // Update Refs
                      currentDetectionsRef.current = { boxes: b, scores: s, classes: c };
 
                      const endInf = performance.now();
                      if (isMounted.current) {
                         setInferenceTime(Math.round(endInf - startInf));
-                        // Approximate FPS based on inference duration
                         setFps(Math.round(1000 / (endInf - startInf)));
                      }
                   }
                }
             } catch (e) {
-               console.warn("[NEURAL] Async inference failed:", e);
+               console.warn("[NEURAL] Inference dropped frame", e);
             } finally {
                isInferringRef.current = false;
             }
          })();
       }
 
-      requestRef.current = requestAnimationFrame(detect);
+      requestRef.current = requestAnimationFrame(loop);
     };
 
-    const startDetection = () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      detect();
-    };
-    
-    startDetection();
-    
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    }
+    loop();
+    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); }
 
-  }, [model, profile.accessibility.yoloEnabled, profile.accessibility.yoloConfidence, setAiTarget]);
+  }, [model, profile.accessibility.yoloEnabled, profile.accessibility.yoloConfidence]);
 
   return (
-    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black">
+    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black group">
       <video ref={videoRef} className="hidden" muted playsInline />
       <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block" />
       
+      {/* Permanent Top Source Selector */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 pointer-events-auto">
+        <div className="relative">
+          <button 
+             onClick={() => setShowSourceMenu(!showSourceMenu)}
+             className="flex items-center gap-3 px-6 py-3 bg-slate-950/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl hover:bg-slate-900 transition-all group-hover:border-blue-500/30"
+          >
+             <div className="p-1.5 rounded-full bg-blue-600/20 text-blue-400">
+               {sourceMode === 'SCREEN' && <Monitor className="w-4 h-4" />}
+               {sourceMode === 'WINDOW' && <AppWindow className="w-4 h-4" />}
+               {sourceMode === 'CAMERA' && <Camera className="w-4 h-4" />}
+             </div>
+             <div className="flex flex-col items-start">
+               <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-0.5">Input Source</span>
+               <span className="text-[10px] font-black text-white uppercase tracking-widest leading-none flex items-center gap-2">
+                 {sourceMode} Feed <ChevronDown className="w-3 h-3 text-slate-500" />
+               </span>
+             </div>
+          </button>
+
+          {showSourceMenu && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 w-64 glass p-2 rounded-2xl border border-white/10 shadow-2xl animate-in slide-in-from-top-2 fade-in flex flex-col gap-1">
+               <button onClick={() => { startStream('SCREEN'); setShowSourceMenu(false); }} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-left transition-colors group/item">
+                  <Monitor className="w-4 h-4 text-slate-500 group-hover/item:text-blue-400" />
+                  <div>
+                    <span className="block text-[10px] font-black text-white uppercase tracking-widest">Entire Screen</span>
+                    <span className="block text-[8px] font-bold text-slate-500 uppercase">Primary Display</span>
+                  </div>
+               </button>
+               <button onClick={() => { startStream('WINDOW'); setShowSourceMenu(false); }} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-left transition-colors group/item">
+                  <AppWindow className="w-4 h-4 text-slate-500 group-hover/item:text-purple-400" />
+                  <div>
+                    <span className="block text-[10px] font-black text-white uppercase tracking-widest">App Window</span>
+                    <span className="block text-[8px] font-bold text-slate-500 uppercase">Target Process</span>
+                  </div>
+               </button>
+               <button onClick={() => { startStream('CAMERA'); setShowSourceMenu(false); }} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-left transition-colors group/item">
+                  <Camera className="w-4 h-4 text-slate-500 group-hover/item:text-green-400" />
+                  <div>
+                    <span className="block text-[10px] font-black text-white uppercase tracking-widest">Webcam</span>
+                    <span className="block text-[8px] font-bold text-slate-500 uppercase">Video Capture</span>
+                  </div>
+               </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="absolute inset-0 pointer-events-none p-10 flex flex-col justify-between z-20">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-6">
@@ -720,76 +524,14 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                 <Settings className="w-6 h-6" />
              </button>
              
-             {/* Source Selection Menu */}
-             <div className="relative">
-                <button 
-                  onClick={() => setShowSourceMenu(!showSourceMenu)} 
-                  className={`p-4 rounded-2xl border transition-all flex items-center gap-2 ${showSourceMenu || sourceMode !== 'SCREEN' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-slate-900 text-slate-500'}`}
-                  title="Select Input Source"
-                >
-                  {sourceMode === 'CAMERA' ? <Camera className="w-6 h-6" /> : <Monitor className="w-6 h-6" />}
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showSourceMenu ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showSourceMenu && (
-                  <div className="absolute top-20 right-0 w-64 glass p-4 rounded-3xl border border-white/10 shadow-2xl animate-in slide-in-from-top-4 fade-in z-50 flex flex-col gap-2">
-                    <div className="px-2 py-1">
-                      <h4 className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
-                        <Scan className="w-3 h-3 text-blue-400" /> Select Input Source
-                      </h4>
-                    </div>
-                    
-                    <button 
-                      onClick={() => startStream('SCREEN')}
-                      className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors text-left group"
-                    >
-                      <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400 group-hover:text-white group-hover:bg-blue-600 transition-all">
-                        <Monitor className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] font-black text-white uppercase tracking-widest">Entire Screen</span>
-                        <span className="block text-[8px] font-bold text-slate-500 uppercase">Full Desktop Capture</span>
-                      </div>
-                    </button>
-
-                    <button 
-                      onClick={() => startStream('WINDOW')}
-                      className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors text-left group"
-                    >
-                      <div className="p-2 bg-purple-600/20 rounded-lg text-purple-400 group-hover:text-white group-hover:bg-purple-600 transition-all">
-                        <AppWindow className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] font-black text-white uppercase tracking-widest">Specific Window</span>
-                        <span className="block text-[8px] font-bold text-slate-500 uppercase">Isolate Application</span>
-                      </div>
-                    </button>
-
-                    <button 
-                      onClick={() => startStream('CAMERA')}
-                      className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors text-left group"
-                    >
-                      <div className="p-2 bg-green-600/20 rounded-lg text-green-400 group-hover:text-white group-hover:bg-green-600 transition-all">
-                        <Camera className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] font-black text-white uppercase tracking-widest">Webcam Feed</span>
-                        <span className="block text-[8px] font-bold text-slate-500 uppercase">Physical Camera</span>
-                      </div>
-                    </button>
-                  </div>
-                )}
-             </div>
-
              {/* SETTINGS POPUP */}
              {showSettings && (
-               <div className="absolute top-20 right-20 w-72 glass p-6 rounded-3xl border border-white/10 shadow-2xl animate-in slide-in-from-top-4 fade-in z-50">
+               <div className="absolute top-20 right-0 w-72 glass p-6 rounded-3xl border border-white/10 shadow-2xl animate-in slide-in-from-top-4 fade-in z-50">
                  <h4 className="text-[10px] font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
                    <Settings className="w-3 h-3 text-purple-400" /> Neural Configuration
                  </h4>
                  
                  <div className="space-y-6">
-                   {/* Confidence Slider */}
                    <div className="space-y-3">
                      <div className="flex justify-between items-center">
                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Confidence Threshold</span>
@@ -808,7 +550,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                      </div>
                    </div>
 
-                   {/* Quality Toggle */}
                    <div className="space-y-3">
                      <div className="flex justify-between items-center">
                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Model Quality</span>
@@ -830,7 +571,6 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
                      </div>
                    </div>
                    
-                   {/* Load Local Model - Moved here for easy access */}
                    <div className="space-y-3 pt-4 border-t border-white/5">
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Advanced</span>
                         <button 
@@ -859,7 +599,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         )}
 
         {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-30">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-30 pointer-events-auto">
                 <div className="text-center space-y-6 px-8 max-w-2xl">
                     <div className="flex justify-center">
                         {error.includes("NATIVE_DETECTED") ? (
@@ -906,8 +646,9 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         )}
 
         {needsDownload && !loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-30 animate-in fade-in">
-                <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem] shadow-2xl">
+            <div className="absolute inset-0 flex items-center justify-center z-30 animate-in fade-in pointer-events-none">
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm -z-10" />
+                <div className="text-center space-y-6 max-w-md p-8 bg-slate-950/90 border border-white/10 rounded-[3rem] shadow-2xl pointer-events-auto">
                     <div className="w-20 h-20 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto border border-blue-500/30 animate-pulse">
                         <CloudDownload className="w-10 h-10 text-blue-400" />
                     </div>
@@ -981,7 +722,7 @@ export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateP
         </div>
       )}
 
-      {/* Hidden File Input for Local Loading - Now Outside Conditional Blocks */}
+      {/* Hidden File Input for Local Loading */}
       <input 
           type="file" 
           multiple 
