@@ -4,9 +4,10 @@ import { Profile } from '../types';
 import { BrainCircuit, Camera, Monitor, Loader2, AlertCircle, HardDrive, CloudDownload, FileCode } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
+// Swapped priorities - JSDelivr is generally more reliable for CORS than raw.github
 const MODEL_MIRRORS = [
-    'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json', // Primary
-    'https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json' // Backup
+    'https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json', // Primary
+    'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json' // Backup
 ];
 
 export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
@@ -43,6 +44,8 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const lastTargetRef = useRef<{x: number, y: number} | null>(null);
 
   useEffect(() => {
+    // Enable production mode for performance
+    tf.enableProdMode();
     const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50; analysisCanvasRef.current = canvas;
     const infCanvas = document.createElement('canvas'); infCanvas.width = 640; infCanvas.height = 640; inferenceCanvasRef.current = infCanvas;
     isMounted.current = true;
@@ -66,12 +69,18 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
         setLoading(true);
         setLoadingText("Parsing Local Tensor Graph...");
         try {
-            const files = Array.from(event.target.files);
-            const hasJson = files.some((f: any) => f.name.toLowerCase().endsWith('.json'));
-            const hasBin = files.some((f: any) => f.name.toLowerCase().endsWith('.bin'));
+            // Explicitly type the array to prevent 'unknown' type inference in some TS environments
+            const files: File[] = Array.from(event.target.files);
             
-            if (!hasJson || !hasBin) {
-                throw new Error("Missing Files: Select BOTH 'model.json' AND the '.bin' weight files.");
+            // Basic validation
+            const jsonFile = files.find(f => f.name.toLowerCase().endsWith('.json'));
+            if (!jsonFile) {
+                 throw new Error("No model.json found. Please select your model file.");
+            }
+
+            // Warning if single file but let TFJS try (it might fail if weights are missing)
+            if (files.length === 1) {
+                console.warn("Single file selected. If this model has external weights (.bin), it will fail.");
             }
 
             // TensorFlow.js browserFiles IO handler
@@ -82,7 +91,11 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
             setNeedsDownload(false);
         } catch (err: any) {
             console.error(err);
-            setError(err.message || "Failed to load local model.");
+            let msg = err.message || "Failed to load local model.";
+            if (msg.includes("weight") || msg.includes("fetch")) {
+                msg = "Missing Weights: Ensure you selected ALL files (model.json + .bin) at once.";
+            }
+            setError(msg);
             setLoading(false);
         }
     }
@@ -104,7 +117,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
           try {
               loadedModel = await tryLoad(MODEL_MIRRORS[0]);
           } catch (e) {
-              console.warn("Primary mirror failed, trying backup...");
+              console.warn("Primary mirror failed, trying backup...", e);
               loadedModel = await tryLoad(MODEL_MIRRORS[1]);
           }
 
@@ -125,15 +138,16 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
     const checkCacheAndInit = async () => {
       try {
         await tf.ready();
-        if (tf.getBackend() !== 'webgl') {
-            await tf.setBackend('webgl');
+        const backend = tf.getBackend();
+        if (backend !== 'webgl' && backend !== 'webgpu') {
+            await tf.setBackend('webgl').catch(() => console.warn('WebGL failed, falling back to CPU (slow)'));
         }
-        // Check if we have a model loaded? No persistence in this demo, so always prompt.
+        // Always prompt for model in this demo version
         setNeedsDownload(true);
         setLoading(false);
       } catch (e) { 
           console.error(e);
-          setError("WebGL Backend Initialization Failed");
+          setError("TensorFlow Backend Initialization Failed");
       }
     };
     checkCacheAndInit();
@@ -147,7 +161,10 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       if (video && canvas && video.readyState === 4) {
          const ctx = canvas.getContext('2d', { alpha: false });
          if (ctx) {
+            // Draw video to main canvas
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Draw Detections if available
             if (currentDetectionsRef.current) {
                const detections = currentDetectionsRef.current;
                
@@ -169,7 +186,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                   if (score < threshold) return;
 
                   const [cx, cy] = box;
-                  // Normalize 0-1
+                  // Normalize 0-1 based on model input size (640x640)
                   const nx = cx / 640;
                   const ny = cy / 640;
                   
@@ -213,6 +230,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                   if (score < (profile.accessibility.yoloConfidence || 0.5)) return;
                   
                   const [cx, cy, w, h] = box;
+                  // Map 640x640 model coords to canvas coords
                   const x1 = (cx - w / 2) * (canvas.width / 640);
                   const y1 = (cy - h / 2) * (canvas.height / 640);
                   const rw = w * (canvas.width / 640);
@@ -260,8 +278,9 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
          }
       }
 
+      // Inference Loop
       const now = performance.now();
-      if (model && !isInferringRef.current && (now - lastInferenceRef.current >= 16)) {
+      if (model && !isInferringRef.current && (now - lastInferenceRef.current >= 16)) { // Cap at ~60fps inferences
          isInferringRef.current = true;
          lastInferenceRef.current = now;
          (async () => {
@@ -271,25 +290,37 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                if (video && video.readyState === 4 && infCanvas) {
                   const infCtx = infCanvas.getContext('2d', { willReadFrequently: true, alpha: false });
                   if (infCtx) {
+                     // Draw to inference canvas (640x640)
                      infCtx.drawImage(video, 0, 0, 640, 640);
+                     
                      const tensorData = tf.tidy(() => {
                         const img = tf.browser.fromPixels(infCanvas);
                         const normalized = img.toFloat().div(255.0).expandDims(0);
-                        const output = model.predict(normalized) as tf.Tensor;
+                        
+                        // Use execute instead of predict for better graph compatibility
+                        const output = model.execute(normalized) as tf.Tensor;
+                        
+                        // YOLOv8 Output shape processing: [1, 84, 8400]
                         const res = output.squeeze([0]).transpose([1, 0]); 
                         const [boxes, scores] = tf.split(res, [4, 80], 1);
                         const nms = tf.image.nonMaxSuppression(convertCenterToCorners(boxes), scores.max(1), 20, 0.5, 0.5);
                         return { boxes: boxes.gather(nms), scores: scores.max(1).gather(nms), classes: scores.argMax(1).gather(nms) };
                      });
+                     
                      const [b, s, c] = await Promise.all([tensorData.boxes.array(), tensorData.scores.array(), tensorData.classes.array()]);
                      tensorData.boxes.dispose(); tensorData.scores.dispose(); tensorData.classes.dispose();
                      currentDetectionsRef.current = { boxes: b, scores: s, classes: c };
+                     
                      const endInf = performance.now();
                      setInferenceTime(Math.round(endInf - startInf));
-                     setFps(Math.round(1000 / (endInf - startInf)));
+                     setFps(Math.round(1000 / (endInf - startInf + 1))); // Simple FPS estimation
                   }
                }
-            } catch (e) { console.warn(e); } finally { isInferringRef.current = false; }
+            } catch (e) { 
+                console.warn("Inference dropped frame", e); 
+            } finally { 
+                isInferringRef.current = false; 
+            }
          })();
       }
       requestRef.current = requestAnimationFrame(detect);
@@ -301,11 +332,23 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const startStream = async (mode: 'SCREEN' | 'CAMERA') => {
     try {
       let stream;
-      if (mode === 'SCREEN') stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60 } });
-      else stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      if (mode === 'SCREEN') {
+          // IMPORTANT: Capture at 60fps for smoother detection
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60, displaySurface: 'monitor' } });
+      } else {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      }
+      
+      if (videoRef.current) { 
+          videoRef.current.srcObject = stream; 
+          videoRef.current.play(); 
+      }
       setSourceMode(mode);
-    } catch (e) { setError("Stream Access Denied. Check permissions."); }
+      setError(null);
+    } catch (e) { 
+        console.error(e);
+        setError("Stream Access Denied. Please grant permission."); 
+    }
   };
 
   return (
@@ -316,8 +359,8 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
         <div className="flex justify-between items-start">
             <div className="flex items-center gap-6"><div className="p-4 rounded-3xl bg-slate-800/50"><BrainCircuit className="w-10 h-10 text-slate-600" /></div><div><p className="text-[16px] font-black text-white uppercase tracking-[0.6em]">NEURAL_INTERCEPT</p><p className="text-[10px] text-slate-500 uppercase">{fps}FPS | {inferenceTime}MS</p></div></div>
             <div className="flex gap-4 pointer-events-auto">
-             <button onClick={() => startStream('SCREEN')} className="p-4 rounded-2xl bg-blue-600 text-white"><Monitor className="w-6 h-6" /></button>
-             <button onClick={() => startStream('CAMERA')} className="p-4 rounded-2xl bg-slate-900 text-slate-500"><Camera className="w-6 h-6" /></button>
+             <button onClick={() => startStream('SCREEN')} className="p-4 rounded-2xl bg-blue-600 text-white hover:bg-blue-500 transition-colors"><Monitor className="w-6 h-6" /></button>
+             <button onClick={() => startStream('CAMERA')} className="p-4 rounded-2xl bg-slate-900 text-slate-500 hover:bg-slate-800 transition-colors"><Camera className="w-6 h-6" /></button>
             </div>
         </div>
         
@@ -339,7 +382,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                     </div>
                     
                     {error && (
-                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-left">
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-left animate-in shake">
                             <AlertCircle className="w-8 h-8 text-red-500" />
                             <p className="text-[10px] font-bold text-red-400 uppercase leading-tight">{error}</p>
                         </div>
@@ -354,7 +397,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                         <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-slate-800 hover:bg-slate-700 rounded-2xl transition-colors group text-left">
                             <HardDrive className="w-6 h-6 text-slate-400 mb-2 group-hover:scale-110 transition-transform" />
                             <p className="text-[10px] font-black text-slate-300 uppercase">Load Local</p>
-                            <p className="text-[8px] text-slate-500 uppercase">.json + .bin</p>
+                            <p className="text-[8px] text-slate-500 uppercase">Select .json + .bin together</p>
                         </button>
                     </div>
                     <input type="file" multiple accept=".json,.bin,.pt,.onnx" ref={fileInputRef} className="hidden" onChange={handleLocalFileSelect} />
