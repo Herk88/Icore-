@@ -133,6 +133,14 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
   const profileRef = useRef(activeProfile);
   const aiTargetRef = useRef<{ x: number, y: number } | null>(null);
 
+  // --- NEURAL CONTROL REFS ---
+  const pidStateRef = useRef({ 
+      integralX: 0, integralY: 0, 
+      prevErrorX: 0, prevErrorY: 0 
+  });
+  const lastKnownTargetRef = useRef<{ x: number, y: number } | null>(null);
+  const targetLossTimeoutRef = useRef(0);
+
   useEffect(() => { 
     profileRef.current = activeProfile; 
   }, [activeProfile]);
@@ -289,7 +297,7 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
 
         // --- NEURAL AIM ASSIST & TARGET TRACKING ---
         // Logic: If target is detected AND (Right Click/R2 OR Left Click/L2 is held), Lock & Follow
-        const target = aiTargetRef.current;
+        let target = aiTargetRef.current;
         const neuralConfig = profile.accessibility;
         let finalVelX = 0;
         let finalVelY = 0;
@@ -297,6 +305,20 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
         const sensitivity = rsConfigX?.sensitivity || 50;
         finalVelX = rsX * sensitivity * 0.5;
         finalVelY = rsY * sensitivity * 0.5;
+
+        // TARGET PERSISTENCE / MEMORY
+        // If AI loses target momentarily, keep aiming at last known spot for ~400ms
+        if (target) {
+            lastKnownTargetRef.current = target;
+            targetLossTimeoutRef.current = 0;
+        } else if (lastKnownTargetRef.current) {
+            targetLossTimeoutRef.current += deltaTime * 1000;
+            if (targetLossTimeoutRef.current < 400) {
+                target = lastKnownTargetRef.current;
+            } else {
+                lastKnownTargetRef.current = null;
+            }
+        }
 
         // Check Trigger States for Activation (L2=6, R2=7)
         // User requested tracking on "R2 or Right Click Release" (interpreted as Hold R2 or L2)
@@ -306,18 +328,35 @@ export const GamepadProvider: React.FC<{ children: React.ReactNode, activeProfil
             const dx = target.x - 0.5; 
             const dy = target.y - 0.5;
             
-            // Apply Tracking Force (Follow the Target)
-            const trackingStrength = (neuralConfig.yoloTrackingPower || 35) / 100; 
-            
-            // Calculate distance to center
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            
-            // Only engage if somewhat close (FOV check) or if user wants full screen locking
-            // For "Lock and Follow", we apply force to center the target
-            if (dist > 0.01) { // Avoid jitter at dead center
-               finalVelX += dx * trackingStrength * 50; 
-               finalVelY += dy * trackingStrength * 50;
-            }
+            // PID Controller Implementation for "Sticky" Lock
+            const Kp = (neuralConfig.yoloTrackingPower || 35) / 100; 
+            const Ki = 0.1;  // Integral Gain (builds up force if target stays off-center)
+            const Kd = 0.05; // Derivative Gain (dampens overshoot)
+
+            pidStateRef.current.integralX += dx * deltaTime;
+            pidStateRef.current.integralY += dy * deltaTime;
+
+            // Anti-Windup
+            const maxIntegral = 0.5;
+            pidStateRef.current.integralX = Math.max(-maxIntegral, Math.min(maxIntegral, pidStateRef.current.integralX));
+            pidStateRef.current.integralY = Math.max(-maxIntegral, Math.min(maxIntegral, pidStateRef.current.integralY));
+
+            const derivativeX = (dx - pidStateRef.current.prevErrorX) / deltaTime;
+            const derivativeY = (dy - pidStateRef.current.prevErrorY) / deltaTime;
+
+            pidStateRef.current.prevErrorX = dx;
+            pidStateRef.current.prevErrorY = dy;
+
+            // Calculate Force
+            const forceX = (Kp * dx + Ki * pidStateRef.current.integralX + Kd * derivativeX) * 2000; // Multiplier to map normalized coords to screen pixels
+            const forceY = (Kp * dy + Ki * pidStateRef.current.integralY + Kd * derivativeY) * 2000;
+
+            // Apply Tracking Force
+            finalVelX += forceX; 
+            finalVelY += forceY;
+        } else {
+            // Reset PID when lock is released or lost
+            pidStateRef.current = { integralX: 0, integralY: 0, prevErrorX: 0, prevErrorY: 0 };
         }
 
         // Mouse Injection
