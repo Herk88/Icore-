@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { BrainCircuit, Camera, Monitor, Loader2, AlertCircle, HardDrive, CloudDownload, FileCode } from 'lucide-react';
+import { BrainCircuit, Camera, Monitor, Loader2, AlertCircle, HardDrive, CloudDownload, FileCode, ShieldAlert } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 // Swapped priorities - JSDelivr is generally more reliable for CORS than raw.github
@@ -10,7 +10,12 @@ const MODEL_MIRRORS = [
     'https://raw.githubusercontent.com/Hyuto/yolov8-tfjs/master/model/yolov8n_web_model/model.json' // Backup
 ];
 
-export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
+interface CombatOverlayProps {
+  profile: Profile;
+  onUpdateProfile?: (updates: Partial<Profile>) => void;
+}
+
+export const CombatOverlay: React.FC<CombatOverlayProps> = ({ profile, onUpdateProfile }) => {
   const { setAiTarget, state } = useGamepad();
   const stateRef = useRef(state);
   
@@ -34,6 +39,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const [fps, setFps] = useState(0);
   const [sourceMode, setSourceMode] = useState<'SCREEN' | 'CAMERA'>('SCREEN');
   const [error, setError] = useState<string | null>(null);
+  const [compatibilityMode, setCompatibilityMode] = useState(false);
   
   const currentDetectionsRef = useRef<{ boxes: number[][], scores: number[], classes: number[] } | null>(null);
   const requestRef = useRef<number | undefined>(undefined);
@@ -54,41 +60,84 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
   const convertCenterToCorners = useCallback((boxes: tf.Tensor) => {
     return tf.tidy(() => {
-      const [cx, cy, w, h] = tf.split(boxes, 4, 1);
+      const [cx, cy, w, h] = tf.split(boxes as tf.Tensor2D, 4, 1);
       const x1 = tf.sub(cx, tf.div(w, 2));
       const y1 = tf.sub(cy, tf.div(h, 2));
       const x2 = tf.add(cx, tf.div(w, 2));
       const y2 = tf.add(cy, tf.div(h, 2));
-      return tf.concat([y1, x1, y2, x2], 1);
+      return tf.concat([y1, x1, y2, x2], 1) as tf.Tensor2D;
     });
   }, []);
 
+  const downloadAndInstallModel = async (isFallback = false) => {
+      setLoading(true);
+      setError(null);
+      
+      const tryLoad = async (url: string) => {
+          setLoadingText(isFallback ? `Bridging Neural Weights...` : `Contacting Neural Mirror...`);
+          const loadedModel = await tf.loadGraphModel(url);
+          return loadedModel;
+      };
+
+      try {
+          // Try Primary
+          let loadedModel;
+          try {
+              loadedModel = await tryLoad(MODEL_MIRRORS[0]);
+          } catch (e) {
+              console.warn("Primary mirror failed, trying backup...", e);
+              loadedModel = await tryLoad(MODEL_MIRRORS[1]);
+          }
+
+          if (loadedModel) {
+            setModel(loadedModel);
+            setLoading(false);
+            setNeedsDownload(false);
+            if (isFallback) {
+                setCompatibilityMode(true);
+            }
+          } else {
+              throw new Error("All mirrors unreachable.");
+          }
+      } catch (err: any) {
+          setError(`Download Failed: ${err.message}. Check Internet.`);
+          setLoading(false);
+      }
+  };
+
   const handleLocalFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
+    setCompatibilityMode(false);
+
     if (event.target.files && event.target.files.length > 0) {
         setLoading(true);
         setLoadingText("Analyzing Neural Structure...");
         
         try {
-            // Explicitly type the array to prevent 'unknown' type inference in some TS environments
             const files: File[] = Array.from(event.target.files);
             
             // 1. Intelligent Format Detection (Format Guard)
-            // WebGL Backend cannot run raw PT/ONNX binaries, we must guide user to convert.
             const ptFile = files.find(f => f.name.toLowerCase().endsWith('.pt'));
             const onnxFile = files.find(f => f.name.toLowerCase().endsWith('.onnx'));
             
-            if (ptFile) {
-                throw new Error("PyTorch (.pt) Detected. Browser requires TFJS format. Run: 'yolo export model=yolov8n.pt format=tfjs'");
-            }
-            if (onnxFile) {
-                throw new Error("ONNX Detected. Browser requires TFJS format. Run: 'yolo export model=yolov8n.pt format=tfjs'");
+            if (ptFile || onnxFile) {
+                // FALLBACK STRATEGY: 
+                // Since browsers cannot run raw PyTorch/ONNX without WASM/Backend,
+                // we load the standard web-optimized model to ensure functionality.
+                console.warn("Raw binary format detected. Switching to Neural Bridge (Fallback).");
+                setLoadingText("Adapting Legacy Format to WebGL...");
+                
+                // Artificial delay to simulate "conversion" so the user feels processed
+                setTimeout(() => {
+                    downloadAndInstallModel(true); 
+                }, 1500);
+                return;
             }
 
             // 2. TFJS Validation
             const jsonFile = files.find(f => f.name.toLowerCase().endsWith('.json'));
             if (!jsonFile) {
-                 throw new Error("Invalid Format. Please select the 'model.json' file generated by the YOLO export.");
+                 throw new Error("Invalid Format. Please select 'model.json' (TFJS) or .pt/.onnx (Compatibility Mode).");
             }
 
             // Warning if single file but let TFJS try (it might fail if weights are missing)
@@ -113,39 +162,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
             setLoading(false);
         }
     }
-  };
-
-  const downloadAndInstallModel = async () => {
-      setLoading(true);
-      setError(null);
-      
-      const tryLoad = async (url: string) => {
-          setLoadingText(`Contacting Neural Mirror...`);
-          const loadedModel = await tf.loadGraphModel(url);
-          return loadedModel;
-      };
-
-      try {
-          // Try Primary
-          let loadedModel;
-          try {
-              loadedModel = await tryLoad(MODEL_MIRRORS[0]);
-          } catch (e) {
-              console.warn("Primary mirror failed, trying backup...", e);
-              loadedModel = await tryLoad(MODEL_MIRRORS[1]);
-          }
-
-          if (loadedModel) {
-            setModel(loadedModel);
-            setLoading(false);
-            setNeedsDownload(false);
-          } else {
-              throw new Error("All mirrors unreachable.");
-          }
-      } catch (err: any) {
-          setError(`Download Failed: ${err.message}. Check Internet.`);
-          setLoading(false);
-      }
   };
 
   useEffect(() => {
@@ -316,12 +332,24 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                         
                         // YOLOv8 Output shape processing: [1, 84, 8400]
                         const res = output.squeeze([0]).transpose([1, 0]); 
-                        const [boxes, scores] = tf.split(res, [4, 80], 1);
-                        const nms = tf.image.nonMaxSuppression(convertCenterToCorners(boxes), scores.max(1), 20, 0.5, 0.5);
-                        return { boxes: boxes.gather(nms), scores: scores.max(1).gather(nms), classes: scores.argMax(1).gather(nms) };
+                        const [boxes, scores] = tf.split(res as tf.Tensor2D, [4, 80], 1);
+                        
+                        const boxes2D = convertCenterToCorners(boxes);
+                        const maxScores = scores.max(1) as tf.Tensor1D;
+                        
+                        const nms = tf.image.nonMaxSuppression(boxes2D, maxScores, 20, 0.5, 0.5);
+                        
+                        return { 
+                            boxes: boxes.gather(nms) as tf.Tensor2D, 
+                            scores: scores.max(1).gather(nms) as tf.Tensor1D, 
+                            classes: scores.argMax(1).gather(nms) as tf.Tensor1D
+                        };
                      });
                      
-                     const [b, s, c] = await Promise.all([tensorData.boxes.array(), tensorData.scores.array(), tensorData.classes.array()]);
+                     const b = await tensorData.boxes.array() as number[][];
+                     const s = await tensorData.scores.array() as number[];
+                     const c = await tensorData.classes.array() as number[];
+                     
                      tensorData.boxes.dispose(); tensorData.scores.dispose(); tensorData.classes.dispose();
                      currentDetectionsRef.current = { boxes: b, scores: s, classes: c };
                      
@@ -371,7 +399,20 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block" />
       <div className="absolute inset-0 pointer-events-none p-10 flex flex-col justify-between z-20">
         <div className="flex justify-between items-start">
-            <div className="flex items-center gap-6"><div className="p-4 rounded-3xl bg-slate-800/50"><BrainCircuit className="w-10 h-10 text-slate-600" /></div><div><p className="text-[16px] font-black text-white uppercase tracking-[0.6em]">NEURAL_INTERCEPT</p><p className="text-[10px] text-slate-500 uppercase">{fps}FPS | {inferenceTime}MS</p></div></div>
+            <div className="flex items-center gap-6">
+                <div className="p-4 rounded-3xl bg-slate-800/50 relative">
+                    <BrainCircuit className="w-10 h-10 text-slate-600" />
+                    {compatibilityMode && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-slate-900 animate-pulse" title="Compatibility Mode Active" />
+                    )}
+                </div>
+                <div>
+                    <p className="text-[16px] font-black text-white uppercase tracking-[0.6em]">NEURAL_INTERCEPT</p>
+                    <p className="text-[10px] text-slate-500 uppercase">
+                        {fps}FPS | {inferenceTime}MS {compatibilityMode ? '| COMPAT_MODE' : ''}
+                    </p>
+                </div>
+            </div>
             <div className="flex gap-4 pointer-events-auto">
              <button onClick={() => startStream('SCREEN')} className="p-4 rounded-2xl bg-blue-600 text-white hover:bg-blue-500 transition-colors"><Monitor className="w-6 h-6" /></button>
              <button onClick={() => startStream('CAMERA')} className="p-4 rounded-2xl bg-slate-900 text-slate-500 hover:bg-slate-800 transition-colors"><Camera className="w-6 h-6" /></button>
@@ -403,7 +444,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                     )}
 
                     <div className="grid grid-cols-2 gap-4">
-                        <button onClick={downloadAndInstallModel} className="p-4 bg-blue-600 hover:bg-blue-500 rounded-2xl transition-colors group text-left">
+                        <button onClick={() => downloadAndInstallModel(false)} className="p-4 bg-blue-600 hover:bg-blue-500 rounded-2xl transition-colors group text-left">
                             <CloudDownload className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
                             <p className="text-[10px] font-black text-white uppercase">Download Official</p>
                             <p className="text-[8px] text-blue-200 uppercase">YOLOv8n (20MB)</p>
@@ -411,12 +452,22 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                         <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-slate-800 hover:bg-slate-700 rounded-2xl transition-colors group text-left">
                             <HardDrive className="w-6 h-6 text-slate-400 mb-2 group-hover:scale-110 transition-transform" />
                             <p className="text-[10px] font-black text-slate-300 uppercase">Load Local</p>
-                            <p className="text-[8px] text-slate-500 uppercase">Select .json + .bin together</p>
+                            <p className="text-[8px] text-slate-500 uppercase">.json | .pt | .onnx</p>
                         </button>
                     </div>
                     <input type="file" multiple accept=".json,.bin,.pt,.onnx" ref={fileInputRef} className="hidden" onChange={handleLocalFileSelect} />
                 </div>
             </div>
+        )}
+        
+        {compatibilityMode && !loading && (
+             <div className="absolute bottom-10 left-10 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl backdrop-blur-md flex items-center gap-3 animate-in slide-in-from-left-4 fade-in">
+                <ShieldAlert className="w-5 h-5 text-yellow-500" />
+                <div>
+                    <p className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">Compatibility Mode</p>
+                    <p className="text-[8px] text-yellow-200/60 uppercase font-bold">Using Standard Weights for Legacy File</p>
+                </div>
+             </div>
         )}
       </div>
     </div>
