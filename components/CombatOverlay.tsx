@@ -1,13 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGamepad } from './GamepadProvider';
 import { Profile } from '../types';
-import { BrainCircuit, Loader2, Monitor, Camera, HardDrive, Wifi, CloudDownload, Check, FileCode, ServerCrash, ChevronDown, Database, Scan, Terminal } from 'lucide-react';
+import { BrainCircuit, Camera, Monitor } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
 
 const MODEL_MIRRORS = ['https://cdn.jsdelivr.net/gh/Hyuto/yolov8-tfjs@master/model/yolov8n_web_model/model.json'];
 
 export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
-  const { setAiTarget } = useGamepad();
+  const { setAiTarget, state } = useGamepad();
+  const stateRef = useRef(state);
+  
+  // Sync state for the animation loop
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -17,7 +24,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
   const [model, setModel] = useState<tf.GraphModel | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Initializing Neural Core...');
   const [needsDownload, setNeedsDownload] = useState(false);
   const [inferenceTime, setInferenceTime] = useState(0);
   const [fps, setFps] = useState(0);
@@ -28,6 +34,9 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   const requestRef = useRef<number | undefined>(undefined);
   const lastInferenceRef = useRef<number>(0);
   const isInferringRef = useRef(false);
+
+  // Sticky Targeting State
+  const lastTargetRef = useRef<{x: number, y: number} | null>(null);
 
   useEffect(() => {
     const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50; analysisCanvasRef.current = canvas;
@@ -85,7 +94,6 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
       try {
         await tf.ready();
         await tf.setBackend('webgl');
-        // Auto-download logic omitted for brevity in installer, assumes manual selection if cache fails
         setNeedsDownload(true);
         setLoading(false);
       } catch (e) { console.error(e); }
@@ -106,39 +114,69 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
                const detections = currentDetectionsRef.current;
                
                let bestTarget = null;
-               let bestDist = Infinity;
+               let bestScore = -Infinity;
                let lockedIndex = -1;
 
-               // Pass 1: Identify best target (closest to center with high confidence)
+               // Engagement Logic: Check L2 (6) or R2 (7)
+               const buttons = stateRef.current.buttons;
+               const isEngaged = buttons[6] || buttons[7]; 
+
+               // Hysteresis Parameters
+               // If engaged, we stick much harder to the target
+               const STICKY_BONUS = isEngaged ? 2.5 : 0.8; 
+               const SAME_TARGET_RADIUS = isEngaged ? 0.3 : 0.15; // normalized distance
+
                detections.boxes.forEach((box, i) => {
                   const score = detections.scores[i];
                   const threshold = profile.accessibility.yoloConfidence || 0.5;
-                  
                   if (score < threshold) return;
 
                   const [cx, cy] = box;
-                  // Normalized distance from center (0.5, 0.5)
-                  const dist = Math.sqrt(Math.pow((cx/640)-0.5, 2) + Math.pow((cy/640)-0.5, 2));
+                  // Normalize 0-1
+                  const nx = cx / 640;
+                  const ny = cy / 640;
                   
-                  if (dist < bestDist) {
-                      bestDist = dist;
-                      bestTarget = { x: cx/640, y: cy/640 };
+                  // Base score: Proximity to crosshair (0.5, 0.5)
+                  const distToCenter = Math.sqrt(Math.pow(nx - 0.5, 2) + Math.pow(ny - 0.5, 2));
+                  let calculatedScore = (1.0 - distToCenter); 
+
+                  // Apply Hysteresis (Sticky Targeting)
+                  if (lastTargetRef.current) {
+                      const distToLast = Math.sqrt(Math.pow(nx - lastTargetRef.current.x, 2) + Math.pow(ny - lastTargetRef.current.y, 2));
+                      if (distToLast < SAME_TARGET_RADIUS) {
+                          calculatedScore += STICKY_BONUS;
+                      }
+                  }
+
+                  if (calculatedScore > bestScore) {
+                      bestScore = calculatedScore;
+                      bestTarget = { x: nx, y: ny };
                       lockedIndex = i;
                   }
                });
 
+               // Smoothing & State Update
+               if (bestTarget) {
+                   if (lastTargetRef.current) {
+                       // Low-pass filter to reduce jitter
+                       const alpha = isEngaged ? 0.4 : 0.7; // Lower alpha = more smoothing (heavier feel)
+                       bestTarget.x = bestTarget.x * alpha + lastTargetRef.current.x * (1 - alpha);
+                       bestTarget.y = bestTarget.y * alpha + lastTargetRef.current.y * (1 - alpha);
+                   }
+                   lastTargetRef.current = bestTarget;
+               } else {
+                   // Immediate clear or decay? For now immediate clear to prevent ghosting
+                   lastTargetRef.current = null;
+               }
+               
                setAiTarget(bestTarget);
 
-               // Pass 2: Draw indicators
+               // Rendering Logic
                detections.boxes.forEach((box, i) => {
                   const score = detections.scores[i];
-                  const threshold = profile.accessibility.yoloConfidence || 0.5;
-                  
-                  if (score < threshold) return;
+                  if (score < (profile.accessibility.yoloConfidence || 0.5)) return;
                   
                   const [cx, cy, w, h] = box;
-                  
-                  // Scale to canvas dimensions
                   const x1 = (cx - w / 2) * (canvas.width / 640);
                   const y1 = (cy - h / 2) * (canvas.height / 640);
                   const rw = w * (canvas.width / 640);
@@ -146,27 +184,42 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
 
                   if (i === lockedIndex) {
                       // Locked Target Visuals
-                      ctx.shadowColor = '#06b6d4'; // Cyan Glow
-                      ctx.shadowBlur = 15;
-                      ctx.strokeStyle = '#06b6d4';
-                      ctx.lineWidth = 3;
-                      ctx.strokeRect(x1, y1, rw, rh);
+                      const color = isEngaged ? '#ef4444' : '#06b6d4'; // Red vs Cyan
+                      ctx.shadowColor = color;
+                      ctx.shadowBlur = isEngaged ? 25 : 15;
+                      ctx.strokeStyle = color;
+                      ctx.lineWidth = isEngaged ? 4 : 2;
                       
-                      // Score Label
+                      // Bracket Style
+                      const bracketLen = Math.min(rw, rh) * 0.3;
+                      ctx.beginPath();
+                      ctx.moveTo(x1, y1 + bracketLen); ctx.lineTo(x1, y1); ctx.lineTo(x1 + bracketLen, y1);
+                      ctx.moveTo(x1 + rw - bracketLen, y1); ctx.lineTo(x1 + rw, y1); ctx.lineTo(x1 + rw, y1 + bracketLen);
+                      ctx.moveTo(x1 + rw, y1 + rh - bracketLen); ctx.lineTo(x1 + rw, y1 + rh); ctx.lineTo(x1 + rw - bracketLen, y1 + rh);
+                      ctx.moveTo(x1 + bracketLen, y1 + rh); ctx.lineTo(x1, y1 + rh); ctx.lineTo(x1, y1 + rh - bracketLen);
+                      ctx.stroke();
+
+                      // Label
                       ctx.shadowBlur = 0;
-                      ctx.fillStyle = '#06b6d4';
-                      const label = `LOCKED ${(score * 100).toFixed(0)}%`;
+                      ctx.fillStyle = color;
+                      const label = `${isEngaged ? 'ENGAGED' : 'LOCKED'} ${(score * 100).toFixed(0)}%`;
                       ctx.font = 'bold 12px monospace';
                       const metrics = ctx.measureText(label);
-                      const bgW = metrics.width + 8;
-                      const bgH = 20;
-                      
-                      ctx.fillRect(x1, y1 - bgH, bgW, bgH);
+                      ctx.fillRect(x1, y1 - 22, metrics.width + 10, 22);
                       ctx.fillStyle = '#000';
-                      ctx.fillText(label, x1 + 4, y1 - 5);
+                      ctx.fillText(label, x1 + 5, y1 - 6);
+
+                      // Vector Line
+                      if (isEngaged) {
+                          ctx.beginPath();
+                          ctx.moveTo(canvas.width/2, canvas.height/2);
+                          ctx.lineTo(x1 + rw/2, y1 + rh/2);
+                          ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+                          ctx.lineWidth = 1;
+                          ctx.stroke();
+                      }
                   } else if (profile.accessibility.visualIndicatorsEnabled) {
-                      // Candidate Visuals
-                      ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // Faint Red
+                      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
                       ctx.lineWidth = 1;
                       ctx.strokeRect(x1, y1, rw, rh);
                   }
@@ -224,7 +277,7 @@ export const CombatOverlay: React.FC<{ profile: Profile }> = ({ profile }) => {
   };
 
   return (
-    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black">
+    <div className="relative w-full aspect-video glass rounded-[3.5rem] border border-white/5 shadow-2xl overflow-hidden bg-black group">
       <video ref={videoRef} className="hidden" muted playsInline />
       <canvas ref={canvasRef} width={800} height={450} className="w-full h-full block" />
       <div className="absolute inset-0 pointer-events-none p-10 flex flex-col justify-between z-20">
